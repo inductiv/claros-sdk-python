@@ -197,3 +197,39 @@ def test_extract_bearer_token():
     assert extract_bearer_token({"authorization": "Bearer token456"}) == "token456"
     assert extract_bearer_token({}, {"access_token": "cookie789"}) == "cookie789"
     assert extract_bearer_token({}) is None
+
+
+@pytest.mark.asyncio
+async def test_claros_client_without_m2m_credentials():
+    from claros_sdk.exceptions import ClarOSAuthError
+
+    transport, _, _ = create_mock_transport()
+    httpx_client = httpx.AsyncClient(transport=transport)
+
+    # Initialize client without client_id or client_secret
+    client = ClarOSClient(
+        base_url="http://localhost:8080",
+        httpx_client=httpx_client,
+    )
+
+    # ClarOSGuard should work fine without M2M credentials
+    guard = ClarOSGuard(client)
+
+    class DummyState:
+        pass
+
+    class DummyRequest:
+        def __init__(self):
+            self.headers = {"Authorization": "Bearer token-abc"}
+            self.cookies = {}
+            self.state = DummyState()
+
+    auth_ctx = await guard(DummyRequest())
+    assert auth_ctx.user_id == "user-uuid-1234"
+
+    # Attempting to fetch M2M token without credentials should raise ClarOSAuthError
+    with pytest.raises(ClarOSAuthError, match="client_id and client_secret are required"):
+        await client.get_token()
+
+    await client.close()
+

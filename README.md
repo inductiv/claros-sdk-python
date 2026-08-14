@@ -27,7 +27,7 @@ uv add "claros-sdk @ git+https://github.com/inductiv/claros-sdk-python.git
 
 ### 1. FastAPI Route Protection with `ClarOSGuard`
 
-Use `ClarOSGuard` to protect FastAPI endpoints with a single line of dependency injection:
+Use `ClarOSGuard` to protect FastAPI endpoints with a single line of dependency injection (no M2M credentials required for guard/user auth):
 
 ```python
 from fastapi import FastAPI, Depends
@@ -35,15 +35,9 @@ from claros_sdk import ClarOSGuard, ClarOSAuthContext, ClarOSClient
 
 app = FastAPI()
 
-def get_claros_client() -> ClarOSClient:
-    return ClarOSClient(
-        base_url="http://localhost:8080",
-        client_id="sa_client_123",
-        client_secret="secret_xyz",
-    )
-
-# Instantiate guard once
-guard = ClarOSGuard(get_claros_client)
+# M2M credentials (client_id/client_secret) are not required when using ClarOSGuard
+client = ClarOSClient(base_url="http://localhost:8080")
+guard = ClarOSGuard(client)
 
 @app.get("/api/v1/protected")
 async def protected_endpoint(auth: ClarOSAuthContext = Depends(guard)):
@@ -65,11 +59,8 @@ Authenticate a user token and resolve tenant context programmatically:
 ```python
 from claros_sdk import ClarOSClient
 
-client = ClarOSClient(
-    base_url="http://localhost:8080",
-    client_id="sa_client_123",
-    client_secret="secret_xyz",
-)
+# client_id and client_secret are optional when verifying user tokens
+client = ClarOSClient(base_url="http://localhost:8080")
 
 # Single method call to verify token and resolve tenant context
 auth_context = await client.authenticate(
@@ -87,41 +78,24 @@ print(f"Headers Map: {auth_context.headers}")
 
 ---
 
-### 3. Send Templated Emails (`send_email`)
+### 3. Machine-to-Machine (M2M) & Communication (`send_email`, `send_slack`)
 
-Send transactional emails using template parameters compatible with Go `templ` / `html/template`:
+`client_id` and `client_secret` are **only required** when acquiring M2M OAuth access tokens or using M2M APIs (`send_email`, `send_slack`):
 
 ```python
+client = ClarOSClient(
+    base_url="http://localhost:8080",
+    client_id="sa_client_123",
+    client_secret="secret_xyz",
+)
+
+# Send transactional email (automatically fetches M2M token via client_id/client_secret)
 response = await client.send_email(
     recipient_email="john.doe@example.com",
     recipient_name="John Doe",
     subject="Monthly Financial Overview - August 2026",
     template_name="monthly-kpi-report",
-    template_data={
-        "Greeting": "Hi John,",
-        "ReportDate": "August 14, 2026",
-        "PeriodStart": "2026-07-01",
-        "PeriodEnd": "2026-07-31",
-        "RunwayFormatted": "14.2 Mos",
-        "BankBalanceFormatted": "$1,250,000",
-        "RevenueFormatted": "$150,000",
-        "OutflowFormatted": "$85,000",
-        "Health": "Healthy",
-    },
-)
-```
-
----
-
-### 4. Send Slack Messages (`send_slack`)
-
-Send formatted Slack alerts or notifications:
-
-```python
-response = await client.send_slack(
-    title="🚀 Production Deployment Completed",
-    message="Production release v2.4.1 has been deployed successfully to US-East region.",
-    channel_id="C0123456789",  # Optional target channel
+    template_data={"Greeting": "Hi John,"},
 )
 ```
 
@@ -131,7 +105,14 @@ response = await client.send_slack(
 
 ### Client Class
 
-#### `ClarOSClient(base_url, client_id, client_secret, timeout=10.0, httpx_client=None)`
+#### `ClarOSClient(base_url, client_id=None, client_secret=None, timeout=10.0, httpx_client=None)`
+
+- **Parameters:**
+  - `base_url` (`str`): Base URL of the ClarOS service.
+  - `client_id` (`str | None`, optional): OAuth2 M2M Client ID. *Required only for M2M operations or calling `get_token()`.*
+  - `client_secret` (`str | None`, optional): OAuth2 M2M Client Secret. *Required only for M2M operations or calling `get_token()`.*
+  - `timeout` (`float`, default `10.0`): HTTP request timeout in seconds.
+  - `httpx_client` (`httpx.AsyncClient | None`, optional): Custom async HTTP client.
 
 - **`authenticate(token, tenant_id=None, workspace_id=None)`** -> `ClarOSAuthContext`  
   Verifies token validity and resolves tenant authorization context.
@@ -139,12 +120,12 @@ response = await client.send_slack(
   Verifies access token authenticity and extracts `user_id`.
 - **`resolve_tenant_auth_context(token, user_id, tenant_id=None, workspace_id=None)`** -> `TenantAuthContextResponse`  
   Resolves tenant permissions, role, and context headers.
-- **`send_email(recipient_email, subject, template_name, recipient_name=None, template_data=None)`** -> `dict`  
-  Sends a templated email message.
-- **`send_slack(title, message, channel_id=None)`** -> `dict`  
-  Sends a Slack message.
 - **`get_token()`** -> `str`  
-  Fetches or returns cached M2M OAuth2 access token.
+  Fetches or returns cached M2M OAuth2 access token. *(Requires `client_id` and `client_secret`)*
+- **`send_email(...)`** -> `dict`  
+  Sends a templated email message. *(Requires `client_id` and `client_secret`)*
+- **`send_slack(...)`** -> `dict`  
+  Sends a Slack message. *(Requires `client_id` and `client_secret`)*
 
 ---
 

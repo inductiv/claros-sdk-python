@@ -24,8 +24,8 @@ class ClarOSClient:
     def __init__(
         self,
         base_url: str,
-        client_id: str,
-        client_secret: str,
+        client_id: str | None = None,
+        client_secret: str | None = None,
         timeout: float = 10.0,
         httpx_client: httpx.AsyncClient | None = None,
     ) -> None:
@@ -64,6 +64,11 @@ class ClarOSClient:
         """Fetch or return cached M2M OAuth access token."""
         if not force_refresh and self.is_token_valid and self._access_token:
             return self._access_token
+
+        if not self.client_id or not self.client_secret:
+            raise ClarOSAuthError(
+                "client_id and client_secret are required to acquire an M2M access token"
+            )
 
         url = f"{self.base_url}/api/v1/auth/oauth/token"
         payload = {
