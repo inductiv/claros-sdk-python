@@ -18,7 +18,7 @@ Python SDK for machine-to-machine (M2M) communication, user authentication, and 
 ## Installation
 
 ```bash
-pip install -e packages/claros-sdk
+uv add "claros-sdk @ git+https://github.com/inductiv/claros-sdk-python.git
 ```
 
 ---
