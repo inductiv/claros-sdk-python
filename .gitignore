@@ -1,0 +1,91 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+*.so
+*.egg
+*.egg-info/
+dist/
+build/
+eggs/
+parts/
+var/
+sdist/
+develop-eggs/
+.installed.cfg
+lib/
+lib64/
+MANIFEST
+
+# Virtual environments
+.venv/
+venv/
+env/
+ENV/
+.env/
+
+# Environment files — may contain secrets
+.env
+.env.*
+!.env.example
+
+# uv
+.python-version
+uv.lock
+
+# Testing
+.pytest_cache/
+.coverage
+.coverage.*
+coverage.xml
+htmlcov/
+*.xml
+junit/
+
+# Type checking
+.mypy_cache/
+.dmypy.json
+dmypy.json
+.pyright/
+.ruff_cache/
+
+# Build / packaging
+*.whl
+*.tar.gz
+__pypackages__/
+
+# IDEs
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+
+# Jupyter
+.ipynb_checkpoints/
+*.ipynb
+
+# Logs
+*.log
+logs/
+
+# Langfuse / OTel local dev artefacts
+langfuse_data/
+otel_data/
+
+# Redis / ARQ worker (autonomous extra)
+dump.rdb
+/docs/review/
+/docs/refactor/
+/graphify-out
+/.claude
+/specs
+claude.md
+tasklog.md
+/docs/releases/
