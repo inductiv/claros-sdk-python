@@ -249,6 +249,7 @@ class ClarOSClient:
         self,
         title: str,
         message: str,
+        channel: str | None = None,
     ) -> dict[str, Any]:
         """Send a Slack notification via ClarOS Communication API."""
         token = await self.get_token()
@@ -256,6 +257,7 @@ class ClarOSClient:
         payload = {
             "title": title,
             "message": message,
+            "recipient": channel,
         }
         headers = {
             "Authorization": f"Bearer {token}",
