@@ -1,14 +1,24 @@
 from __future__ import annotations
 
+import asyncio
+import collections
+import json
 import logging
+import random
 import time
 from typing import Any
 
 import httpx
 
+from claros_sdk.channels.base import BaseChannel
+from claros_sdk.channels.discord import DiscordChannel
+from claros_sdk.channels.email import EmailChannel
+from claros_sdk.channels.slack import SlackChannel
+from claros_sdk.events import EventEmitter
 from claros_sdk.exceptions import ClarOSAPIError, ClarOSAuthError, ClarOSError
 from claros_sdk.models import (
     ClarOSAuthContext,
+    InboundMessageEvent,
     TenantAuthContextResponse,
     TokenVerifyResponse,
 )
@@ -23,7 +33,7 @@ class ClarOSClient:
 
     def __init__(
         self,
-        base_url: str,
+        base_url: str = "https://api.claros.ai",
         client_id: str | None = None,
         client_secret: str | None = None,
         timeout: float = 10.0,
@@ -40,6 +50,26 @@ class ClarOSClient:
         self._access_token: str | None = None
         self._expires_at: float = 0.0
 
+        # Event Dispatcher & SSE stream state
+        self.dispatcher = EventEmitter()
+        self._last_event_id: str | None = None
+        self._is_connected = False
+        self._reconnect_attempts = 0
+        self._stopped = False
+        self._stream_task: asyncio.Task[None] | None = None
+        self._connection_lock: asyncio.Lock | None = None
+        self._seen_event_ids: collections.deque[str] = collections.deque(maxlen=1000)
+
+        # Modular Communication Channels
+        self.slack = SlackChannel(self)
+        self.email = EmailChannel(self)
+        self.discord = DiscordChannel(self)
+
+    def _get_lock(self) -> asyncio.Lock:
+        if self._connection_lock is None:
+            self._connection_lock = asyncio.Lock()
+        return self._connection_lock
+
     async def __aenter__(self) -> ClarOSClient:
         return self
 
@@ -47,8 +77,20 @@ class ClarOSClient:
         await self.close()
 
     async def close(self) -> None:
+        """Stop SSE background streams and close HTTP client."""
+        await self.stop_stream()
         if not self._external_client:
             await self._client.aclose()
+
+    def channel(self, channel_type: str) -> BaseChannel:
+        """Get or create a generic channel instance by identifier."""
+        if channel_type == "slack":
+            return self.slack
+        elif channel_type == "email":
+            return self.email
+        elif channel_type == "discord":
+            return self.discord
+        return BaseChannel(self, channel_type=channel_type)
 
     @property
     def access_token(self) -> str | None:
@@ -59,6 +101,66 @@ class ClarOSClient:
         return bool(
             self._access_token and time.time() < (self._expires_at - DEFAULT_LEEWAY_SECONDS)
         )
+
+    @property
+    def is_connected(self) -> bool:
+        """Return True if the inbound SSE stream is currently connected."""
+        return self._is_connected
+
+    @property
+    def last_event_id(self) -> str | None:
+        """Return the last received SSE event ID."""
+        return self._last_event_id
+
+    # ---------------------------------------------------------------------------
+    # HTTP Post Helper
+    # ---------------------------------------------------------------------------
+
+    async def _get_auth_header(self) -> str | None:
+        """Resolve Authorization header from M2M token."""
+        if self.client_id and self.client_secret:
+            token = await self.get_token()
+            return f"Bearer {token}"
+        if self._access_token:
+            return f"Bearer {self._access_token}"
+        return None
+
+    async def post(
+        self,
+        path: str,
+        json: Any = None,
+        headers: dict[str, str] | None = None,
+    ) -> dict[str, Any]:
+        """Perform an authenticated POST request against ClarOS API."""
+        url = f"{self.base_url}/{path.lstrip('/')}"
+        req_headers = {"Content-Type": "application/json"}
+
+        auth_header = await self._get_auth_header()
+        if auth_header:
+            req_headers["Authorization"] = auth_header
+        if headers:
+            req_headers.update(headers)
+
+        try:
+            response = await self._client.post(url, json=json, headers=req_headers)
+        except Exception as exc:
+            raise ClarOSError(f"ClarOS POST {path} request failed: {exc}") from exc
+
+        if response.status_code not in (200, 201, 202):
+            raise ClarOSAPIError(
+                status_code=response.status_code,
+                message=response.text,
+                payload=json if isinstance(json, dict) else None,
+            )
+
+        try:
+            return response.json()
+        except Exception:
+            return {"status": "ok", "status_code": response.status_code}
+
+    # ---------------------------------------------------------------------------
+    # M2M Token Acquisition
+    # ---------------------------------------------------------------------------
 
     async def get_token(self, force_refresh: bool = False) -> str:
         """Fetch or return cached M2M OAuth access token."""
@@ -200,9 +302,8 @@ class ClarOSClient:
             headers=p.headers,
         )
 
-
     # ---------------------------------------------------------------------------
-    # Communication Endpoints
+    # Backward-compatible Communication Endpoints
     # ---------------------------------------------------------------------------
 
     async def send_email(
@@ -213,70 +314,201 @@ class ClarOSClient:
         template_name: str = "welcome-email",
         template_data: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
-        """Send an email via ClarOS Communication API."""
-        token = await self.get_token()
-        url = f"{self.base_url}/api/v1/comm/email"
-        payload = {
-            "recipient_email": recipient_email,
-            "recipient_name": recipient_name or recipient_email.split("@")[0],
-            "subject": subject,
-            "template_name": template_name,
-            "template_data": template_data or {},
-        }
-        headers = {
-            "Authorization": f"Bearer {token}",
-            "Content-Type": "application/json",
-        }
-
-        try:
-            response = await self._client.post(url, json=payload, headers=headers)
-        except Exception as exc:
-            raise ClarOSError(f"ClarOS send_email request failed: {exc}") from exc
-
-        if response.status_code not in (200, 201, 202):
-            raise ClarOSAPIError(
-                status_code=response.status_code,
-                message=response.text,
-                payload=payload,
-            )
-
-        try:
-            return response.json()
-        except Exception:
-            return {"status": "ok", "status_code": response.status_code}
+        """Send an email via ClarOS Communication API (backward-compatible method)."""
+        return await self.email.send(
+            recipient_email=recipient_email,
+            recipient_name=recipient_name,
+            subject=subject,
+            template_name=template_name,
+            template_data=template_data,
+        )
 
     async def send_slack(
         self,
-        title: str,
-        message: str,
+        title: str = "",
+        message: str = "",
         channel: str | None = None,
     ) -> dict[str, Any]:
-        """Send a Slack notification via ClarOS Communication API."""
-        token = await self.get_token()
-        url = f"{self.base_url}/api/v1/comm/slack"
-        payload = {
-            "title": title,
-            "message": message,
-            "recipient": channel,
-        }
-        headers = {
-            "Authorization": f"Bearer {token}",
-            "Content-Type": "application/json",
-        }
+        """Send a Slack notification via ClarOS Communication API (backward-compatible method)."""
+        return await self.slack.send(
+            title=title,
+            message=message,
+            channel=channel,
+        )
 
+    # ---------------------------------------------------------------------------
+    # Inbound SSE Connection Management
+    # ---------------------------------------------------------------------------
+
+    def ensure_stream_connected(self) -> None:
+        """Establish and maintain background SSE connection if not already running."""
+        if self._stream_task and not self._stream_task.done():
+            return
         try:
-            response = await self._client.post(url, json=payload, headers=headers)
-        except Exception as exc:
-            raise ClarOSError(f"ClarOS send_slack request failed: {exc}") from exc
+            loop = asyncio.get_running_loop()
+            self._stopped = False
+            self._stream_task = loop.create_task(self._connect_sse())
+        except RuntimeError:
+            pass
 
-        if response.status_code not in (200, 201, 202):
-            raise ClarOSAPIError(
-                status_code=response.status_code,
-                message=response.text,
-                payload=payload,
-            )
+    async def start_stream(self) -> None:
+        """Start inbound SSE streaming task."""
+        if self._stream_task and not self._stream_task.done():
+            return
+        self._stopped = False
+        self._stream_task = asyncio.create_task(self._connect_sse())
 
+    async def stop_stream(self) -> None:
+        """Stop inbound SSE streaming task."""
+        self._stopped = True
+        if self._stream_task:
+            task = self._stream_task
+            self._stream_task = None
+            task.cancel()
+            try:
+                await task
+            except (asyncio.CancelledError, Exception):
+                pass
+        self._is_connected = False
+
+    async def listen(self) -> None:
+        """Block and stream SSE events continuously on current coroutine."""
+        if self._stream_task and not self._stream_task.done():
+            try:
+                await self._stream_task
+            except asyncio.CancelledError:
+                pass
+            return
+
+        self._stopped = False
+        await self._connect_sse()
+
+    async def _connect_sse(self) -> None:
+        """Establish SSE connection with auto-reconnect and dispatch frames."""
+        lock = self._get_lock()
+        if lock.locked():
+            logger.debug("[Claros SDK] SSE connection already active, skipping duplicate connection.")
+            return
+
+        async with lock:
+            while not self._stopped:
+                url = f"{self.base_url}/api/v1/comm/inbound/stream"
+                headers: dict[str, str] = {
+                    "Accept": "text/event-stream",
+                    "Cache-Control": "no-cache",
+                }
+                try:
+                    auth_header = await self._get_auth_header()
+                except Exception as exc:
+                    logger.warning("[Claros SDK] Could not resolve auth header for SSE stream: %s", exc)
+                    auth_header = None
+
+                if auth_header:
+                    headers["Authorization"] = auth_header
+                if self._last_event_id:
+                    headers["Last-Event-ID"] = self._last_event_id
+
+                try:
+                    async with self._client.stream("GET", url, headers=headers, timeout=None) as response:
+                        if response.status_code != 200:
+                            logger.error(
+                                "[Claros SDK] Stream connection rejected (HTTP %d)",
+                                response.status_code,
+                            )
+                            await self._schedule_reconnect()
+                            continue
+
+                        self._is_connected = True
+                        self._reconnect_attempts = 0
+                        logger.debug("[Claros SDK] SSE stream connected successfully")
+
+                        current_event = "message"
+                        current_data_lines: list[str] = []
+
+                        async for line in response.aiter_lines():
+                            if self._stopped:
+                                break
+                            if line.startswith(":"):
+                                continue  # Heartbeat comment
+
+                            if line.startswith("event:"):
+                                current_event = line[6:].strip()
+                            elif line.startswith("id:"):
+                                self._last_event_id = line[3:].strip()
+                            elif line.startswith("data:"):
+                                current_data_lines.append(line[5:].strip())
+                            elif line == "":
+                                # End of SSE frame
+                                if current_data_lines:
+                                    raw_data = "\n".join(current_data_lines)
+                                    await self._handle_event(current_event, raw_data)
+                                current_event = "message"
+                                current_data_lines = []
+
+                        if not self._stopped:
+                            self._is_connected = False
+                            await self._schedule_reconnect()
+
+                except asyncio.CancelledError:
+                    self._is_connected = False
+                    break
+                except Exception as exc:
+                    if self._stopped:
+                        break
+                    logger.error("[Claros SDK] Stream error: %s", exc)
+                    self._is_connected = False
+                    await self._schedule_reconnect()
+
+    async def _handle_event(self, event_type: str, raw_data: str) -> None:
+        """Dispatch events to dispatcher by event name and channel type."""
         try:
-            return response.json()
+            payload = json.loads(raw_data)
         except Exception:
-            return {"status": "ok", "status_code": response.status_code}
+            await self.dispatcher.emit(event_type, raw_data)
+            return
+
+        # Deduplicate events by event_id to prevent duplicate handling
+        if isinstance(payload, dict):
+            event_id = payload.get("event_id")
+            if event_id:
+                if event_id in self._seen_event_ids:
+                    logger.debug("[Claros SDK] Dropping duplicate event_id: %s", event_id)
+                    return
+                self._seen_event_ids.append(event_id)
+
+        event_model: InboundMessageEvent | None = None
+        if isinstance(payload, dict):
+            try:
+                event_model = InboundMessageEvent.model_validate(payload)
+                event_model.set_client(self)
+            except Exception:
+                event_model = None
+
+        dispatch_data = event_model if event_model is not None else payload
+
+        # General event emit
+        await self.dispatcher.emit(event_type, dispatch_data)
+
+        # Dispatch channel specific event (e.g. "slack.message", "discord.message")
+        if event_type == "message" and isinstance(payload, dict):
+            channel_type = payload.get("channel_type")
+            config_key = payload.get("config_key")
+            if channel_type:
+                await self.dispatcher.emit(f"{channel_type}.message", dispatch_data)
+                if config_key:
+                    await self.dispatcher.emit(
+                        f"{channel_type}.message.{config_key}", dispatch_data
+                    )
+
+    async def _schedule_reconnect(self) -> None:
+        """Auto-reconnect with exponential backoff & jitter."""
+        if self._stopped:
+            return
+        self._is_connected = False
+        self._reconnect_attempts += 1
+        base_delay = min(1.0 * (2 ** self._reconnect_attempts), 30.0)
+        delay = base_delay + random.uniform(0.0, 1.0)
+        logger.debug(
+            "[Claros SDK] Reconnecting in %.2fs (attempt %d)", delay, self._reconnect_attempts
+        )
+        await asyncio.sleep(delay)
