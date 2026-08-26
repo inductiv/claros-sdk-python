@@ -19,9 +19,9 @@ class EmailChannel(BaseChannel):
     async def send(
         self,
         recipient_email: str,
+        template_name: str,
         recipient_name: str | None = None,
         subject: str = "",
-        template_name: str = "welcome-email",
         template_data: dict[str, Any] | None = None,
         **kwargs: Any,
     ) -> dict[str, Any]:
@@ -31,17 +31,17 @@ class EmailChannel(BaseChannel):
         Usage:
             await client.email.send(
                 recipient_email="user@example.com",
+                template_name="monthly-kpi-report",
                 recipient_name="John Doe",
-                subject="Welcome!",
-                template_name="welcome-email",
-                template_data={"Name": "John"},
+                subject="Monthly KPI Report",
+                template_data={"Greeting": "Hi John,"},
             )
 
         Args:
-            recipient_email: Target email address
+            recipient_email: Target email address (required)
+            template_name: Template identifier (required)
             recipient_name: Target recipient name (defaults to email prefix)
             subject: Email subject line
-            template_name: Template identifier
             template_data: Dictionary containing template substitution data
             **kwargs: Extra parameters passed to API payload
         """

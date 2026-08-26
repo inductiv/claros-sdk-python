@@ -309,17 +309,17 @@ class ClarOSClient:
     async def send_email(
         self,
         recipient_email: str,
+        template_name: str,
         recipient_name: str | None = None,
         subject: str = "",
-        template_name: str = "welcome-email",
         template_data: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
         """Send an email via ClarOS Communication API (backward-compatible method)."""
         return await self.email.send(
             recipient_email=recipient_email,
+            template_name=template_name,
             recipient_name=recipient_name,
             subject=subject,
-            template_name=template_name,
             template_data=template_data,
         )
 

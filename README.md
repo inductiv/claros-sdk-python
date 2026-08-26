@@ -1,48 +1,29 @@
 # ClarOS Python SDK
 
-Python SDK for machine-to-machine (M2M) communication, scoped bot routing, inbound Server-Sent Events (SSE) streaming, user authentication, and tenant authorization via the ClarOS platform services.
+Python SDK for machine-to-machine (M2M) communication, templated email delivery, scoped bot routing, inbound Server-Sent Events (SSE) streaming, user authentication, and tenant authorization via the ClarOS platform services.
 
 ---
 
-## 1. Outbound (Sending Messages from Client)
+## 1. Outbound Communication
 
-When sending messages, you can pass `message` and optional `title`, `channel`, and `config_key`.
-
-### A. Fallback to Default (Default Webhook)
-
-If no bot or channel is specified:
+### A. Slack Messaging
+Send messages to webhooks or specific Slack channels using `client.slack.send()`:
 
 ```python
+# 1. Fallback to default Webhook
 await client.slack.send(
-    title="Alert",
-    message="🚨 Deployment completed",
+    title="Deploy Alert",
+    message="🚨 Deployment completed successfully",
 )
-```
 
-### B. Explicitly Selecting a Bot
-
-#### Option 1: Inline Parameter
-
-```python
-# Sends as ABC-bot
+# 2. Send to specific channel
 await client.slack.send(
-    config_key="ABC-bot",
     channel="C0123456789",
-    title="Support Alert",
-    message="Hello from Customer Support Bot!",
+    title="New Lead",
+    message="A new customer requested a demo.",
 )
 
-# Sends as XYZ-bot
-await client.slack.send(
-    config_key="XYZ-bot",
-    channel="C0987654321",
-    message="Hello from Financial/Billing Bot!",
-)
-```
-
-#### Option 2: Scoped Bot Client (Clean SDK Syntax)
-
-```python
+# 3. Scoped Bot Builder
 support_bot = client.slack.bot("ABC-bot")
 billing_bot = client.slack.bot("XYZ-bot")
 
@@ -52,14 +33,48 @@ await billing_bot.send(channel="C456", title="Invoice", message="Invoice generat
 
 ---
 
-## 2. Inbound (Receiving Messages from Slack/Discord)
+### B. Transactional & Templated Email Delivery
+Send templated transactional emails via Go `html/template` / `templ` compatible engines using `client.email.send()`:
+
+```python
+# `template_name` and `recipient_email` are required
+response = await client.email.send(
+    recipient_email="john.doe@example.com",
+    template_name="monthly-kpi-report",
+    recipient_name="John Doe",
+    subject="Monthly KPI Report - August 2026",
+    template_data={
+        "Greeting": "Hi John,",
+        "ReportDate": "August 2026",
+        "MRR": "$124,500",
+        "NewUsers": "1,420",
+    },
+)
+print(f"Email sent with status: {response.get('status')}")
+```
+
+---
+
+### C. Discord Messaging
+```python
+await client.discord.send(
+    channel="9876543210",
+    title="System Notice",
+    message="Server maintenance scheduled for 02:00 UTC.",
+)
+```
+
+---
+
+## 2. Inbound (Receiving Messages via SSE)
+
+Incoming SSE events delivered over `/api/v1/comm/inbound/stream` embed `config_key`, `channel_type`, and message details.
 
 ### A. Global Listener
-
 ```python
 @client.slack.on_message
 async def on_slack_message(event: InboundMessageEvent):
-    print(f"Received on bot: {event.config_key}")
+    print(f"Received from user {event.source.user_id} on bot: {event.config_key}")
 
     if event.config_key == "ABC-bot":
         # Handle support bot logic
@@ -70,9 +85,7 @@ async def on_slack_message(event: InboundMessageEvent):
 ```
 
 ### B. Scoped Listener per Bot (Direct Binding)
-
 Filter incoming SSE events by `config_key` before calling the handler:
-
 ```python
 # Listens ONLY to messages sent to ABC-bot
 @client.slack.bot("ABC-bot").on_message
@@ -86,9 +99,7 @@ async def on_billing_message(event: InboundMessageEvent):
 ```
 
 ### C. Contextual Auto-Reply
-
 The event object knows which bot and channel received the message and automatically replies:
-
 ```python
 @client.slack.on_message
 async def on_slack_message(event: InboundMessageEvent):
@@ -111,6 +122,16 @@ async def main():
         client_secret="your-client-secret",
     )
 
+    # 1. Send transactional email
+    await client.email.send(
+        recipient_email="user@example.com",
+        template_name="welcome-email",
+        recipient_name="Jane Doe",
+        subject="Welcome to ClarOS!",
+        template_data={"Name": "Jane"},
+    )
+
+    # 2. Setup scoped Slack bot and auto-reply
     support_bot = client.slack.bot("ABC-bot")
 
     @support_bot.on_message
@@ -118,7 +139,7 @@ async def main():
         print(f"New support ticket from {event.source.user_id}: {event.message.text}")
         await event.reply(message="Support ticket received! An agent will assist you shortly.")
 
-    # Start listening to inbound SSE stream
+    # 3. Start listening to inbound SSE stream
     await client.listen()
 
 if __name__ == "__main__":
