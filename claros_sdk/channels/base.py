@@ -34,12 +34,6 @@ class BaseChannel:
         event_name = f"{self.channel_type}.message" if self.channel_type else "message"
         return self._client.dispatcher.on(event_name, handler)
 
-    def onMessage(
-        self, handler: Callable[[InboundMessageEvent], Any] | None = None
-    ) -> Callable[[InboundMessageEvent], Any]:
-        """CamelCase alias for on_message."""
-        return self.on_message(handler)
-
     def on(
         self, event_name: str, handler: Callable[..., Any] | None = None
     ) -> Callable[..., Any]:

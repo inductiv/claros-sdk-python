@@ -57,6 +57,51 @@ class ClarOSAuthContext(BaseModel):
     headers: dict[str, str] = Field(default_factory=dict)
 
 
+class TenantDetail(BaseModel):
+    """Detailed tenant structure within user tenant response."""
+
+    id: str
+    name: str
+    slug: str
+    status: str = "active"
+    created_at: str | None = None
+    updated_at: str | None = None
+    is_system: bool = False
+    attributes: Any = Field(default_factory=dict)
+    parent_tenant_id: str | None = None
+    instance_id: str | None = None
+
+    model_config = {"extra": "allow"}
+
+
+class UserTenantPayload(BaseModel):
+    """Payload containing user profile and associated tenants."""
+
+    id: str
+    external_id: str | None = None
+    email: str
+    username: str | None = None
+    first_name: str | None = None
+    last_name: str | None = None
+    attributes: Any = Field(default_factory=dict)
+    status: str = "active"
+    tenants: list[TenantDetail] = Field(default_factory=list)
+    created_at: str | None = None
+    updated_at: str | None = None
+
+    model_config = {"extra": "allow"}
+
+
+class UserTenantResponse(BaseModel):
+    """Top-level response envelope for ResolveUserTenant endpoint."""
+
+    success: bool
+    message: str
+    payload: UserTenantPayload
+
+    model_config = {"extra": "allow"}
+
+
 class InboundEventSource(BaseModel):
     """Source context of an inbound message event."""
 
@@ -99,7 +144,6 @@ class InboundMessageEvent(BaseModel):
     async def reply(
         self,
         message: str = "",
-        text: str = "",
         title: str | None = None,
         **kwargs: Any,
     ) -> dict[str, Any]:
@@ -114,12 +158,11 @@ class InboundMessageEvent(BaseModel):
         channel_id = self.source.channel_id or self.source.user_id
         target_channel = channel_id if channel_id else None
         config_key = self.config_key if self.config_key else None
-        msg = message or text or ""
 
         if self.channel_type == "slack":
             return await client.slack.send(
                 channel=target_channel,
-                message=msg,
+                message=message,
                 title=title,
                 config_key=config_key,
                 **kwargs,
@@ -127,7 +170,7 @@ class InboundMessageEvent(BaseModel):
         elif self.channel_type == "discord":
             return await client.discord.send(
                 channel=target_channel,
-                message=msg,
+                message=message,
                 title=title,
                 config_key=config_key,
                 **kwargs,
@@ -135,7 +178,7 @@ class InboundMessageEvent(BaseModel):
         else:
             return await client.channel(self.channel_type).send(
                 channel=target_channel,
-                message=msg,
+                message=message,
                 title=title,
                 config_key=config_key,
                 **kwargs,

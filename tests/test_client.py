@@ -5,12 +5,13 @@ import pytest
 from claros_sdk import (
     ClarOSClient,
     ClarOSGuard,
+    UserTenantResponse,
     extract_bearer_token,
 )
 
 
 def create_mock_transport():
-    call_counts = {"token": 0, "email": 0, "slack": 0, "verify": 0, "context": 0}
+    call_counts = {"token": 0, "email": 0, "slack": 0, "verify": 0, "context": 0, "resolve_user": 0}
     last_requests = {}
 
     def handler(request: httpx.Request) -> httpx.Response:
@@ -32,6 +33,47 @@ def create_mock_transport():
         elif url_path == "/api/v1/comm/slack":
             call_counts["slack"] += 1
             return httpx.Response(200, json={"status": "delivered"})
+        elif url_path == "/api/v1/platform/users/email":
+            call_counts["resolve_user"] += 1
+            return httpx.Response(
+                200,
+                json={
+                    "success": True,
+                    "message": "User fetched successfully",
+                    "payload": {
+                        "id": "8d98e87d-f2af-47b3-9d7f-b78bd52b2755",
+                        "external_id": "70ada5b9-8427-4cfe-833b-f7ae173db292",
+                        "email": "finn@user.com",
+                        "username": "finn@user.com",
+                        "first_name": "Finn",
+                        "last_name": "User",
+                        "attributes": {"role_title": "Engineer"},
+                        "status": "active",
+                        "tenants": [
+                            {
+                                "id": "73895137-17f6-45c3-8d87-b1766ed26506",
+                                "name": "Greensprout Pte. Ltd.",
+                                "slug": "greensprout",
+                                "status": "active",
+                                "created_at": "2026-08-14T16:07:37.359597Z",
+                                "updated_at": "2026-08-14T16:07:37.359597Z",
+                                "is_system": False,
+                                "attributes": {
+                                    "tagline": "Get Healthy",
+                                    "ai_agent": {
+                                        "id": "b474ccab-67b4-4284-9a25-090a4bdb1669",
+                                        "key": "finn_agent",
+                                    },
+                                },
+                                "parent_tenant_id": "9d3acd79-3b94-44f5-9c0a-500fa8c43b58",
+                                "instance_id": None,
+                            }
+                        ],
+                        "created_at": "2026-08-14T16:12:03.220771Z",
+                        "updated_at": "2026-08-27T05:34:48.149199Z",
+                    },
+                },
+            )
         elif url_path == "/api/v1/auth/verify":
             call_counts["verify"] += 1
             auth_header = request.headers.get("Authorization", "")
@@ -97,18 +139,49 @@ async def test_claros_client_token_and_email():
         assert cached_token == "mock-test-token-123"
         assert call_counts["token"] == 1
 
-        # Send email
-        res = await client.send_email(
+        # Send email via client.email.send
+        res = await client.email.send(
             recipient_email="john@example.com",
+            template_name="welcome-email",
             recipient_name="John Doe",
             subject="Test Subject",
-            template_name="welcome-email",
             template_data={"Name": "John Doe", "TenantName": "Acme Corp"},
         )
         assert res["status"] == "sent"
         assert call_counts["email"] == 1
         last_req = last_requests["/api/v1/comm/email"]
         assert last_req.headers["Authorization"] == "Bearer mock-test-token-123"
+
+
+@pytest.mark.asyncio
+async def test_resolve_user_tenant():
+    transport, call_counts, last_requests = create_mock_transport()
+    httpx_client = httpx.AsyncClient(transport=transport)
+
+    async with ClarOSClient(
+        base_url="https://claros-api.inductiv.dev",
+        client_id="sa_9d7c461b",
+        client_secret="secret_test",
+        httpx_client=httpx_client,
+    ) as client:
+        res = await client.resolve_user_tenant("finn@user.com")
+        assert isinstance(res, UserTenantResponse)
+        assert res.success is True
+        assert res.message == "User fetched successfully"
+        assert res.payload.email == "finn@user.com"
+        assert res.payload.first_name == "Finn"
+        assert res.payload.attributes == {"role_title": "Engineer"}
+        assert len(res.payload.tenants) == 1
+
+        tenant = res.payload.tenants[0]
+        assert tenant.name == "Greensprout Pte. Ltd."
+        assert tenant.slug == "greensprout"
+        assert tenant.attributes["tagline"] == "Get Healthy"
+        assert tenant.attributes["ai_agent"]["key"] == "finn_agent"
+
+        last_req = last_requests["/api/v1/platform/users/email"]
+        assert last_req.headers["Authorization"] == "Bearer mock-test-token-123"
+        assert last_req.url.params["email"] == "finn@user.com"
 
 
 @pytest.mark.asyncio
@@ -191,7 +264,6 @@ async def test_claros_guard_middleware_dependency():
     await client.close()
 
 
-
 def test_extract_bearer_token():
     assert extract_bearer_token({"Authorization": "Bearer token123"}) == "token123"
     assert extract_bearer_token({"authorization": "Bearer token456"}) == "token456"
@@ -232,4 +304,3 @@ async def test_claros_client_without_m2m_credentials():
         await client.get_token()
 
     await client.close()
-

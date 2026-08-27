@@ -21,6 +21,7 @@ from claros_sdk.models import (
     InboundMessageEvent,
     TenantAuthContextResponse,
     TokenVerifyResponse,
+    UserTenantResponse,
 )
 
 logger = logging.getLogger(__name__)
@@ -113,7 +114,7 @@ class ClarOSClient:
         return self._last_event_id
 
     # ---------------------------------------------------------------------------
-    # HTTP Post Helper
+    # HTTP Request Helpers
     # ---------------------------------------------------------------------------
 
     async def _get_auth_header(self) -> str | None:
@@ -124,6 +125,39 @@ class ClarOSClient:
         if self._access_token:
             return f"Bearer {self._access_token}"
         return None
+
+    async def get(
+        self,
+        path: str,
+        params: dict[str, Any] | None = None,
+        headers: dict[str, str] | None = None,
+    ) -> dict[str, Any]:
+        """Perform an authenticated GET request against ClarOS API."""
+        url = f"{self.base_url}/{path.lstrip('/')}"
+        req_headers: dict[str, str] = {}
+
+        auth_header = await self._get_auth_header()
+        if auth_header:
+            req_headers["Authorization"] = auth_header
+        if headers:
+            req_headers.update(headers)
+
+        try:
+            response = await self._client.get(url, params=params, headers=req_headers)
+        except Exception as exc:
+            raise ClarOSError(f"ClarOS GET {path} request failed: {exc}") from exc
+
+        if response.status_code not in (200, 201, 202):
+            raise ClarOSAPIError(
+                status_code=response.status_code,
+                message=response.text,
+                payload=params,
+            )
+
+        try:
+            return response.json()
+        except Exception:
+            return {"status": "ok", "status_code": response.status_code}
 
     async def post(
         self,
@@ -203,6 +237,42 @@ class ClarOSClient:
         self._expires_at = time.time() + expires_in
         logger.debug("ClarOS M2M access token acquired successfully (expires in %ds)", expires_in)
         return token
+
+    # ---------------------------------------------------------------------------
+    # User & Tenant Resolution
+    # ---------------------------------------------------------------------------
+
+    async def resolve_user_tenant(self, email: str) -> UserTenantResponse:
+        """
+        Resolve user and tenant associations by email (ResolveUserTenant).
+        Calls GET /api/v1/platform/users/email?email=<email>.
+        """
+        token = await self.get_token()
+        url = f"{self.base_url}/api/v1/platform/users/email"
+        headers = {"Authorization": f"Bearer {token}"}
+        params = {"email": email}
+
+        try:
+            response = await self._client.get(url, params=params, headers=headers)
+        except Exception as exc:
+            raise ClarOSError(f"ClarOS resolve_user_tenant request failed: {exc}") from exc
+
+        if response.status_code in (401, 403):
+            raise ClarOSAuthError(f"Unauthorized to resolve user tenant: {response.text}")
+        if response.status_code == 404:
+            raise ClarOSAPIError(404, f"User with email '{email}' not found: {response.text}")
+        if response.status_code != 200:
+            raise ClarOSAPIError(
+                response.status_code, f"Failed to resolve user tenant: {response.text}"
+            )
+
+        try:
+            return UserTenantResponse.model_validate(response.json())
+        except Exception as exc:
+            raise ClarOSError(f"Failed to parse user tenant response: {exc}") from exc
+
+    # Alias for ResolveUserTenant
+    ResolveUserTenant = resolve_user_tenant
 
     # ---------------------------------------------------------------------------
     # 2-Hop Authentication & Authorization Context
@@ -300,40 +370,6 @@ class ClarOSClient:
             permissions=p.permissions,
             license_tier=p.license_tier,
             headers=p.headers,
-        )
-
-    # ---------------------------------------------------------------------------
-    # Backward-compatible Communication Endpoints
-    # ---------------------------------------------------------------------------
-
-    async def send_email(
-        self,
-        recipient_email: str,
-        template_name: str,
-        recipient_name: str | None = None,
-        subject: str = "",
-        template_data: dict[str, Any] | None = None,
-    ) -> dict[str, Any]:
-        """Send an email via ClarOS Communication API (backward-compatible method)."""
-        return await self.email.send(
-            recipient_email=recipient_email,
-            template_name=template_name,
-            recipient_name=recipient_name,
-            subject=subject,
-            template_data=template_data,
-        )
-
-    async def send_slack(
-        self,
-        title: str = "",
-        message: str = "",
-        channel: str | None = None,
-    ) -> dict[str, Any]:
-        """Send a Slack notification via ClarOS Communication API (backward-compatible method)."""
-        return await self.slack.send(
-            title=title,
-            message=message,
-            channel=channel,
         )
 
     # ---------------------------------------------------------------------------

@@ -1,7 +1,9 @@
 from claros_sdk.channels import (
     BaseChannel,
+    DiscordBot,
     DiscordChannel,
     EmailChannel,
+    SlackBot,
     SlackChannel,
 )
 from claros_sdk.client import ClarOSClient
@@ -18,15 +20,14 @@ from claros_sdk.models import (
     InboundMessageEvent,
     TenantAuthContextPayload,
     TenantAuthContextResponse,
+    TenantDetail,
     TokenVerifyPayload,
     TokenVerifyResponse,
+    UserTenantPayload,
+    UserTenantResponse,
 )
 
-# Alias AsyncClarOSClient for backward compatibility
-AsyncClarOSClient = ClarOSClient
-
 __all__ = [
-    "AsyncClarOSClient",
     "BaseChannel",
     "ClarOSAPIError",
     "ClarOSAuthContext",
@@ -34,16 +35,21 @@ __all__ = [
     "ClarOSClient",
     "ClarOSError",
     "ClarOSGuard",
+    "DiscordBot",
     "DiscordChannel",
     "EmailChannel",
     "EventEmitter",
     "InboundEventMessage",
     "InboundEventSource",
     "InboundMessageEvent",
+    "SlackBot",
     "SlackChannel",
     "TenantAuthContextPayload",
     "TenantAuthContextResponse",
+    "TenantDetail",
     "TokenVerifyPayload",
     "TokenVerifyResponse",
+    "UserTenantPayload",
+    "UserTenantResponse",
     "extract_bearer_token",
 ]

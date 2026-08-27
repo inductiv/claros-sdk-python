@@ -22,8 +22,6 @@ class DiscordBot:
         message: str = "",
         channel: str | None = None,
         title: str | None = None,
-        text: str | None = None,
-        content: str | None = None,
         **kwargs: Any,
     ) -> dict[str, Any]:
         """Send a message scoped to this bot's config_key."""
@@ -32,8 +30,6 @@ class DiscordBot:
             channel=channel,
             title=title,
             config_key=self.config_key,
-            text=text,
-            content=content,
             **kwargs,
         )
 
@@ -44,12 +40,6 @@ class DiscordBot:
         self._channel._client.ensure_stream_connected()
         event_name = f"{self._channel.channel_type}.message.{self.config_key}"
         return self._channel._client.dispatcher.on(event_name, handler)
-
-    def onMessage(
-        self, handler: Callable[[InboundMessageEvent], Any] | None = None
-    ) -> Callable[[InboundMessageEvent], Any]:
-        """CamelCase alias for on_message."""
-        return self.on_message(handler)
 
 
 class DiscordChannel(BaseChannel):
@@ -70,8 +60,6 @@ class DiscordChannel(BaseChannel):
         channel: str | None = None,
         title: str | None = None,
         config_key: str | None = None,
-        text: str | None = None,
-        content: str | None = None,
         **kwargs: Any,
     ) -> dict[str, Any]:
         """
@@ -82,15 +70,12 @@ class DiscordChannel(BaseChannel):
             channel: Target Discord channel (mapped to 'recipient' in inner payload, optional)
             title: Message title (mapped to 'title' in inner payload, optional)
             config_key: Bot configuration key (optional)
-            text: Alias for message
-            content: Alias for message
             **kwargs: Extra parameters passed to API payload
         """
         payload: dict[str, Any] = {}
 
-        msg = message or content or text or ""
-        if msg:
-            payload["message"] = msg
+        if message:
+            payload["message"] = message
         if title:
             payload["title"] = title
         if channel:

@@ -1,6 +1,6 @@
 # ClarOS Python SDK
 
-Python SDK for machine-to-machine (M2M) communication, user authentication, tenant authorization, and inbound real-time event streaming via the ClarOS platform services.
+Python SDK for machine-to-machine (M2M) communication, user authentication, tenant authorization, user-tenant resolution, and inbound real-time event streaming via the ClarOS platform services.
 
 ---
 
@@ -8,6 +8,7 @@ Python SDK for machine-to-machine (M2M) communication, user authentication, tena
 
 - **FastAPI Route Protection (`ClarOSGuard`)**: Single-line FastAPI dependency for authenticating user tokens and resolving tenant authorization context statelessly.
 - **Single-Call Authentication (`authenticate`)**: Authenticates user tokens and resolves tenant context (`user_id`, `tenant_id`, `role`, `permissions`, `license_tier`) in a single unified API method.
+- **User & Tenant Resolution (`resolve_user_tenant`)**: Query and retrieve user profile and all associated tenants by email address (`GET /api/v1/platform/users/email`).
 - **Automatic OAuth2 M2M Authentication**: Obtains and caches access tokens using the `client_credentials` grant flow (`POST /api/v1/auth/oauth/token`). Supports both standard and wrapped JSON token payloads.
 - **Modular Communication Channels**: Send messages and notifications through channel-specific adapters (`client.slack.send()`, `client.email.send()`, `client.discord.send()`) with scoped bot routing (`client.slack.bot()`).
 - **Inbound Real-time Event Streaming (SSE)**: Maintain real-time inbound connection to `/api/v1/comm/inbound/stream` with auto-reconnection, event deduplication, and contextual auto-reply (`event.reply()`).
@@ -78,7 +79,30 @@ print(f"Headers Map: {auth_context.headers}")
 
 ---
 
-### 3. Machine-to-Machine (M2M) & Communication
+### 3. User & Tenant Resolution (`resolve_user_tenant`)
+
+Lookup user details and all associated tenants by user email:
+
+```python
+client = ClarOSClient(
+    base_url="https://claros-api.inductiv.dev",
+    client_id="sa_client_123",
+    client_secret="secret_xyz",
+)
+
+user_tenant = await client.resolve_user_tenant("finn@user.com")
+
+print(f"User: {user_tenant.payload.first_name} {user_tenant.payload.last_name}")
+print(f"Email: {user_tenant.payload.email}")
+
+for tenant in user_tenant.payload.tenants:
+    print(f"Tenant: {tenant.name} ({tenant.slug}) - ID: {tenant.id}")
+    print(f"Attributes: {tenant.attributes}")
+```
+
+---
+
+### 4. Machine-to-Machine (M2M) & Outbound Communication
 
 `client_id` and `client_secret` are **only required** when acquiring M2M OAuth access tokens or using communication APIs:
 
@@ -116,7 +140,7 @@ await support_bot.send(
 
 ---
 
-### 4. Inbound Real-time Event Streaming (SSE)
+### 5. Inbound Real-time Event Streaming (SSE)
 
 Receive real-time inbound messages from Slack/Discord over SSE stream (`/api/v1/comm/inbound/stream`):
 
@@ -165,7 +189,9 @@ if __name__ == "__main__":
   - `timeout` (`float`, default `10.0`): HTTP request timeout in seconds.
   - `httpx_client` (`httpx.AsyncClient | None`, optional): Custom async HTTP client.
 
-#### Authentication & Authorization Methods:
+#### User & Tenant Methods:
+- **`resolve_user_tenant(email)`** -> `UserTenantResponse`  
+  Fetches user details and associated tenant list by email address (`GET /api/v1/platform/users/email`).
 - **`authenticate(token, tenant_id=None, workspace_id=None)`** -> `ClarOSAuthContext`  
   Verifies token validity and resolves tenant authorization context in a single call.
 - **`verify_token(token)`** -> `TokenVerifyResponse`  
@@ -195,10 +221,6 @@ if __name__ == "__main__":
 - **`stop_stream()`**: Gracefully stops the active SSE connection.
 - **`dispatcher` (`EventEmitter`)**: Custom event dispatcher (`on`, `off`, `emit`).
 
-#### Backward-Compatible Aliases:
-- **`send_email(...)`** -> Delegates to `client.email.send(...)`
-- **`send_slack(...)`** -> Delegates to `client.slack.send(...)`
-
 ---
 
 ### Models & Dependencies
@@ -213,6 +235,19 @@ if __name__ == "__main__":
   - `permissions`: `list[str]`
   - `license_tier`: `str`
   - `headers`: `dict[str, str]` (dictionary of `X-*` authorization headers)
+- **`UserTenantResponse`**:
+  - `success`: `bool`
+  - `message`: `str`
+  - `payload`: `UserTenantPayload` (`id`, `external_id`, `email`, `username`, `first_name`, `last_name`, `status`, `attributes`, `tenants`)
+- **`TenantDetail`**:
+  - `id`: `str`
+  - `name`: `str`
+  - `slug`: `str`
+  - `status`: `str`
+  - `is_system`: `bool`
+  - `attributes`: `Any` (Arbitrary type metadata/dict)
+  - `parent_tenant_id`: `str | None`
+  - `instance_id`: `str | None`
 - **`InboundMessageEvent`**:
   - `event_id`: `str`
   - `tenant_id`: `str`
