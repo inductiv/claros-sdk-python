@@ -261,6 +261,38 @@ async def test_claros_guard_middleware_dependency():
     assert auth_ctx.tenant_id == "tenant-uuid-9999"
     assert req.state.auth_headers == {"X-Tenant-ID": "tenant-uuid-9999"}
     assert req.state.claros_auth_context == auth_ctx
+
+    import inspect
+    sig = inspect.signature(ClarOSGuard.__call__)
+    assert "request" in sig.parameters
+    assert sig.parameters["request"].annotation != inspect.Parameter.empty
+    await client.close()
+
+
+@pytest.mark.asyncio
+async def test_claros_guard_fastapi_depends():
+    from fastapi import Depends, FastAPI
+    from claros_sdk import ClarOSAuthContext
+
+    transport, _, _ = create_mock_transport()
+    httpx_client = httpx.AsyncClient(transport=transport)
+    client = ClarOSClient(
+        base_url="http://localhost:8080",
+        httpx_client=httpx_client,
+    )
+    guard = ClarOSGuard(client)
+
+    app = FastAPI()
+
+    @app.get("/api/v1/protected")
+    async def protected_route(auth: ClarOSAuthContext = Depends(guard)):
+        return {"user_id": auth.user_id, "tenant_id": auth.tenant_id}
+
+    async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://test") as ac:
+        response = await ac.get("/api/v1/protected", headers={"Authorization": "Bearer token-abc"})
+        assert response.status_code == 200
+        assert response.json() == {"user_id": "user-uuid-1234", "tenant_id": "tenant-uuid-9999"}
+
     await client.close()
 
 

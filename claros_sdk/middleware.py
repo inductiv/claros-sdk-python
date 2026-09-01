@@ -2,6 +2,15 @@ from __future__ import annotations
 
 import logging
 from collections.abc import Callable
+from typing import Any
+
+try:
+    from starlette.requests import Request
+except ImportError:
+    try:
+        from fastapi import Request
+    except ImportError:
+        Request = Any  # type: ignore[misc,assignment]
 
 from claros_sdk.client import ClarOSClient
 from claros_sdk.exceptions import ClarOSAuthError
@@ -49,7 +58,7 @@ class ClarOSGuard:
 
     async def __call__(
         self,
-        request,
+        request: Request,
         token: str | None = None,
         tenant_id: str | None = None,
         workspace_id: str | None = None,

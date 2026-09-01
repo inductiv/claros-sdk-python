@@ -11,10 +11,12 @@ requires-python = ">=3.10"
 dependencies = [
     "httpx>=0.24.0",
     "pydantic>=2.0.0",
+    "starlette>=1.6.0",
 ]
 
 [project.optional-dependencies]
 dev = [
+    "fastapi>=0.141.1",
     "pytest>=8.0.0",
     "pytest-asyncio>=0.23.0",
     "respx>=0.21.0",
@@ -22,3 +24,11 @@ dev = [
 
 [tool.hatch.build.targets.wheel]
 packages = ["claros_sdk"]
+
+[dependency-groups]
+dev = [
+    "fastapi>=0.141.1",
+    "pytest>=8.0.0",
+    "pytest-asyncio>=0.23.0",
+    "respx>=0.21.0",
+]
