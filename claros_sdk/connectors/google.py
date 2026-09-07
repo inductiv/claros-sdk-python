@@ -40,7 +40,7 @@ def build_google_client(
     **kwargs: Any,
 ) -> Any:
     """
-    Construct and return an official Google API client resource with credentials applied.
+    Construct and return the raw official Google API client Resource with credentials applied.
 
     Parameters:
         token_data: The connector token payload retrieved from ClarOS.
@@ -59,5 +59,5 @@ def build_google_client(
     # Initialize Google OAuth2 credentials with the Bearer access token
     credentials = Credentials(token=token_data.token)
 
-    # Build the official Google API resource
+    # Build and return the raw official Google API resource
     return build(serviceName=service, version=version, credentials=credentials, **kwargs)

@@ -20,7 +20,7 @@ class ConnectorTokenData(BaseModel):
 
 
 class ConnectorTokenResponse(BaseModel):
-    """Response returned by ClarOS GET /api/v1/connectors/:key/token."""
+    """Response returned by ClarOS GET /api/v1/platform/connectors/:key/token."""
 
     model_config = ConfigDict(extra="allow")
 

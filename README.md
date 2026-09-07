@@ -211,7 +211,13 @@ result = sheets.spreadsheets().values().get(
 print("Google Sheets rows:", result.get("values", []))
 
 # Access other Google services
-drive = await client.connectors.google("my_drive_conn", service="drive", version="v3")
+drive = await client.connectors.google("my_drive_conn", service="drive")
+results = drive.files().list().execute()
+files = results.get('files', [])
+
+print('Here are your top 10 files:')
+for file in files:
+    print(f"Name: {file['name']} | ID: {file['id']} | Type: {file['mimeType']}")
 
 # 2. Stripe Connector (requires 'stripe')
 # uv add "claros-sdk[stripe]"
@@ -232,12 +238,13 @@ for customer in customers.data:
 
 - **Parameters:**
   - `base_url` (`str`): Base URL of the ClarOS service.
-  - `client_id` (`str | None`, optional): OAuth2 M2M Client ID. *Required only for M2M operations or calling `get_token()`.*
-  - `client_secret` (`str | None`, optional): OAuth2 M2M Client Secret. *Required only for M2M operations or calling `get_token()`.*
+  - `client_id` (`str | None`, optional): OAuth2 M2M Client ID. _Required only for M2M operations or calling `get_token()`._
+  - `client_secret` (`str | None`, optional): OAuth2 M2M Client Secret. _Required only for M2M operations or calling `get_token()`._
   - `timeout` (`float`, default `10.0`): HTTP request timeout in seconds.
   - `httpx_client` (`httpx.AsyncClient | None`, optional): Custom async HTTP client.
 
 #### Third-Party Connectors:
+
 - **`client.connectors` (`ConnectorsManager`)**:
   - `google(key, service=None, version=None, force_refresh=False, **kwargs)` -> Official `googleapiclient` Resource with credentials applied.
   - `stripe(key, force_refresh=False, **kwargs)` -> Official `stripe.StripeClient` with ApiKey applied.
@@ -245,6 +252,7 @@ for customer in customers.data:
   - `clear_cache(key=None)` -> Clears in-memory token cache.
 
 #### User & Tenant Methods:
+
 - **`resolve_user_tenant(email)`** -> `UserTenantResponse`  
   Fetches user details and associated tenant list by email address (`GET /api/v1/platform/users/email`).
 - **`authenticate(token, tenant_id=None, workspace_id=None)`** -> `ClarOSAuthContext`  
@@ -254,9 +262,10 @@ for customer in customers.data:
 - **`resolve_tenant_auth_context(token, user_id, tenant_id=None, workspace_id=None)`** -> `TenantAuthContextResponse`  
   Resolves tenant permissions, role, and context headers.
 - **`get_token(force_refresh=False)`** -> `str`  
-  Fetches or returns cached M2M OAuth2 access token. *(Requires `client_id` and `client_secret`)*
+  Fetches or returns cached M2M OAuth2 access token. _(Requires `client_id` and `client_secret`)_
 
 #### Modular Communication Channels:
+
 - **`client.slack` (`SlackChannel`)**:
   - `send(message="", channel=None, title=None, config_key=None, **kwargs)` -> `dict`
   - `bot(config_key)` -> `SlackBot` (scoped bot client)
@@ -271,6 +280,7 @@ for customer in customers.data:
   - Dynamically get or instantiate any communication channel adapter.
 
 #### Inbound SSE Streaming:
+
 - **`listen()`**: Connects and continuously streams inbound SSE events.
 - **`start_stream()`**: Connects to the inbound SSE event stream in a background task.
 - **`stop_stream()`**: Gracefully stops the active SSE connection.

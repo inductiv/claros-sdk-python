@@ -67,7 +67,7 @@ async def test_get_token_and_caching():
     call_counts = {"token": 0}
 
     def handler(request: httpx.Request) -> httpx.Response:
-        assert request.url.path == "/api/v1/connectors/sheets/token"
+        assert request.url.path == "/api/v1/platform/connectors/sheets/token"
         call_counts["token"] += 1
         return httpx.Response(
             200,

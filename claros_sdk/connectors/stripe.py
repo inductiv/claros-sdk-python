@@ -1,10 +1,13 @@
 from __future__ import annotations
 
 import logging
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from claros_sdk.connectors.models import ConnectorTokenData
 from claros_sdk.exceptions import ClarOSError
+
+if TYPE_CHECKING:
+    import stripe
 
 logger = logging.getLogger(__name__)
 
@@ -23,7 +26,7 @@ def _check_stripe_dependencies() -> None:
 def build_stripe_client(
     token_data: ConnectorTokenData,
     **kwargs: Any,
-) -> Any:
+) -> stripe.StripeClient:
     """
     Construct and return an official Stripe client with api_key applied.
 

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Literal, overload
 
 from claros_sdk.connectors.google import DEFAULT_SERVICE_VERSIONS, build_google_client
 from claros_sdk.connectors.models import (
@@ -14,6 +14,14 @@ from claros_sdk.connectors.stripe import build_stripe_client
 from claros_sdk.exceptions import ClarOSAPIError, ClarOSError
 
 if TYPE_CHECKING:
+    import stripe
+    from googleapiclient.discovery import Resource
+
+    import googleapiclient._apis.calendar.v3
+    import googleapiclient._apis.drive.v3
+    import googleapiclient._apis.gmail.v1
+    import googleapiclient._apis.sheets.v4
+
     from claros_sdk.client import ClarOSClient
 
 logger = logging.getLogger(__name__)
@@ -71,7 +79,7 @@ class ConnectorsManager:
                 if cached.is_valid(leeway_seconds=self.leeway_seconds):
                     return cached.data
 
-            path = f"/api/v1/connectors/{key}/token"
+            path = f"/api/v1/platform/connectors/{key}/token"
             try:
                 res = await self._client.get(path)
             except ClarOSAPIError:
@@ -81,9 +89,11 @@ class ConnectorsManager:
                     f"Failed to fetch connector token for key '{key}': {exc}"
                 ) from exc
 
-            # Parse response data
+            # Parse response data (supports data, payload, or flat token)
             if isinstance(res, dict) and "data" in res and isinstance(res["data"], dict):
                 token_data = ConnectorTokenData.model_validate(res["data"])
+            elif isinstance(res, dict) and "payload" in res and isinstance(res["payload"], dict):
+                token_data = ConnectorTokenData.model_validate(res["payload"])
             elif isinstance(res, dict) and "token" in res:
                 token_data = ConnectorTokenData.model_validate(res)
             else:
@@ -97,6 +107,56 @@ class ConnectorsManager:
 
             self._cache[key] = CachedConnectorToken(token_data)
             return token_data
+
+    @overload
+    async def google(
+        self,
+        key: str,
+        service: Literal["sheets"] = "sheets",
+        version: Literal["v4"] | None = None,
+        force_refresh: bool = False,
+        **kwargs: Any,
+    ) -> googleapiclient._apis.sheets.v4.SheetsResource: ...
+
+    @overload
+    async def google(
+        self,
+        key: str,
+        service: Literal["drive"],
+        version: Literal["v3"] | None = None,
+        force_refresh: bool = False,
+        **kwargs: Any,
+    ) -> googleapiclient._apis.drive.v3.DriveResource: ...
+
+    @overload
+    async def google(
+        self,
+        key: str,
+        service: Literal["gmail"],
+        version: Literal["v1"] | None = None,
+        force_refresh: bool = False,
+        **kwargs: Any,
+    ) -> googleapiclient._apis.gmail.v1.GmailResource: ...
+
+    @overload
+    async def google(
+        self,
+        key: str,
+        service: Literal["calendar"],
+        version: Literal["v3"] | None = None,
+        force_refresh: bool = False,
+        **kwargs: Any,
+    ) -> googleapiclient._apis.calendar.v3.CalendarResource: ...
+
+    @overload
+    async def google(
+        self,
+        key: str,
+        service: str,
+        version: str | None = None,
+        force_refresh: bool = False,
+        **kwargs: Any,
+    ) -> Resource: ...
 
     async def google(
         self,
@@ -133,7 +193,7 @@ class ConnectorsManager:
         key: str,
         force_refresh: bool = False,
         **kwargs: Any,
-    ) -> Any:
+    ) -> stripe.StripeClient:
         """
         Obtain official StripeClient with API key credentials for connection key.
 
