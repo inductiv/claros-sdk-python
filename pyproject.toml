@@ -15,6 +15,20 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
+google = [
+    "google-api-python-client>=2.0.0",
+    "google-auth>=2.0.0",
+    "google-auth-httplib2>=0.2.0",
+]
+stripe = [
+    "stripe>=8.0.0",
+]
+all = [
+    "google-api-python-client>=2.0.0",
+    "google-auth>=2.0.0",
+    "google-auth-httplib2>=0.2.0",
+    "stripe>=8.0.0",
+]
 dev = [
     "fastapi>=0.141.1",
     "pytest>=8.0.0",

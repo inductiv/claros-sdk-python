@@ -12,6 +12,7 @@ Python SDK for machine-to-machine (M2M) communication, user authentication, tena
 - **Automatic OAuth2 M2M Authentication**: Obtains and caches access tokens using the `client_credentials` grant flow (`POST /api/v1/auth/oauth/token`). Supports both standard and wrapped JSON token payloads.
 - **Modular Communication Channels**: Send messages and notifications through channel-specific adapters (`client.slack.send()`, `client.email.send()`, `client.discord.send()`) with scoped bot routing (`client.slack.bot()`).
 - **Inbound Real-time Event Streaming (SSE)**: Maintain real-time inbound connection to `/api/v1/comm/inbound/stream` with auto-reconnection, event deduplication, and contextual auto-reply (`event.reply()`).
+- **Third-Party Connectors (`client.connectors`)**: Fetch credentials and instantiate official third-party SDK clients (Google, Stripe) with in-memory token caching, automatic expiration tracking, and optional dependency extras.
 - **Async API**: Built on `httpx.AsyncClient` for high-performance non-blocking I/O.
 
 ---
@@ -19,7 +20,17 @@ Python SDK for machine-to-machine (M2M) communication, user authentication, tena
 ## Installation
 
 ```bash
+# Core SDK
 uv add "claros-sdk @ git+https://github.com/inductiv/claros-sdk-python.git"
+
+# With Google connectors (google-api-python-client, google-auth)
+uv add "claros-sdk[google] @ git+https://github.com/inductiv/claros-sdk-python.git"
+
+# With Stripe connectors (stripe)
+uv add "claros-sdk[stripe] @ git+https://github.com/inductiv/claros-sdk-python.git"
+
+# With all connectors
+uv add "claros-sdk[all] @ git+https://github.com/inductiv/claros-sdk-python.git"
 ```
 
 ---
@@ -176,6 +187,43 @@ if __name__ == "__main__":
 
 ---
 
+### 6. Third-Party Connectors (`google`, `stripe`)
+
+Use `client.connectors` to dynamically retrieve connection tokens from ClarOS and build official third-party SDK client instances with credentials applied automatically:
+
+```python
+from claros_sdk import ClarOSClient
+
+client = ClarOSClient(
+    base_url="http://localhost:8080",
+    client_id="sa_client_123",
+    client_secret="secret_xyz",
+)
+
+# 1. Google Connector (requires 'google-api-python-client' and 'google-auth')
+# uv add "claros-sdk[google]"
+sheets = await client.connectors.google("sheets")
+# Returns official googleapiclient Resource with OAuth2 Bearer token applied:
+result = sheets.spreadsheets().values().get(
+    spreadsheetId="1BxiMVs0XRA5nFMdKvBdBZjgmUUqptlbs74OgvE2upms",
+    range="Sheet1!A1:C10",
+).execute()
+print("Google Sheets rows:", result.get("values", []))
+
+# Access other Google services
+drive = await client.connectors.google("my_drive_conn", service="drive", version="v3")
+
+# 2. Stripe Connector (requires 'stripe')
+# uv add "claros-sdk[stripe]"
+stripe_client = await client.connectors.stripe("stripe")
+# Returns official stripe.StripeClient instance with ApiKey applied:
+customers = stripe_client.customers.list(limit=5)
+for customer in customers.data:
+    print(customer.id, customer.email)
+```
+
+---
+
 ## API Reference
 
 ### Client Class
@@ -188,6 +236,13 @@ if __name__ == "__main__":
   - `client_secret` (`str | None`, optional): OAuth2 M2M Client Secret. *Required only for M2M operations or calling `get_token()`.*
   - `timeout` (`float`, default `10.0`): HTTP request timeout in seconds.
   - `httpx_client` (`httpx.AsyncClient | None`, optional): Custom async HTTP client.
+
+#### Third-Party Connectors:
+- **`client.connectors` (`ConnectorsManager`)**:
+  - `google(key, service=None, version=None, force_refresh=False, **kwargs)` -> Official `googleapiclient` Resource with credentials applied.
+  - `stripe(key, force_refresh=False, **kwargs)` -> Official `stripe.StripeClient` with ApiKey applied.
+  - `get_token(key, force_refresh=False)` -> `ConnectorTokenData` (cached in-memory, auto-refreshed when expired).
+  - `clear_cache(key=None)` -> Clears in-memory token cache.
 
 #### User & Tenant Methods:
 - **`resolve_user_tenant(email)`** -> `UserTenantResponse`  

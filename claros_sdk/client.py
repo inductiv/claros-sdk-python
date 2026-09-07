@@ -14,6 +14,7 @@ from claros_sdk.channels.base import BaseChannel
 from claros_sdk.channels.discord import DiscordChannel
 from claros_sdk.channels.email import EmailChannel
 from claros_sdk.channels.slack import SlackChannel
+from claros_sdk.connectors.manager import ConnectorsManager
 from claros_sdk.events import EventEmitter
 from claros_sdk.exceptions import ClarOSAPIError, ClarOSAuthError, ClarOSError
 from claros_sdk.models import (
@@ -65,6 +66,9 @@ class ClarOSClient:
         self.slack = SlackChannel(self)
         self.email = EmailChannel(self)
         self.discord = DiscordChannel(self)
+
+        # Third-party Integrations & Connectors
+        self.connectors = ConnectorsManager(self)
 
     def _get_lock(self) -> asyncio.Lock:
         if self._connection_lock is None:

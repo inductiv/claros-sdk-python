@@ -7,6 +7,12 @@ from claros_sdk.channels import (
     SlackChannel,
 )
 from claros_sdk.client import ClarOSClient
+from claros_sdk.connectors import (
+    CachedConnectorToken,
+    ConnectorTokenData,
+    ConnectorTokenResponse,
+    ConnectorsManager,
+)
 from claros_sdk.events import EventEmitter
 from claros_sdk.exceptions import ClarOSAPIError, ClarOSAuthError, ClarOSError
 from claros_sdk.middleware import (
@@ -29,12 +35,16 @@ from claros_sdk.models import (
 
 __all__ = [
     "BaseChannel",
+    "CachedConnectorToken",
     "ClarOSAPIError",
     "ClarOSAuthContext",
     "ClarOSAuthError",
     "ClarOSClient",
     "ClarOSError",
     "ClarOSGuard",
+    "ConnectorTokenData",
+    "ConnectorTokenResponse",
+    "ConnectorsManager",
     "DiscordBot",
     "DiscordChannel",
     "EmailChannel",
