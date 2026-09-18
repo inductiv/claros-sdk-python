@@ -29,17 +29,17 @@ Python SDK for machine-to-machine (M2M) communication, user authentication, tena
 
 ```bash
 # Specific release tag (recommended)
-uv add "git+https://github.com/inductiv/claros-sdk-python.git@v0.1.0"
+uv add "git+https://github.com/inductiv/claros-sdk-python.git@v1.0.0"
 
 # With all connectors (Google, Stripe, etc.)
-uv add "claros-sdk[all] @ git+https://github.com/inductiv/claros-sdk-python.git@v0.1.0"
+uv add "claros-sdk[all] @ git+https://github.com/inductiv/claros-sdk-python.git@v1.0.0"
 
 # Individual connector extras:
-# uv add "claros-sdk[google] @ git+https://github.com/inductiv/claros-sdk-python.git@v0.1.0"
-# uv add "claros-sdk[stripe] @ git+https://github.com/inductiv/claros-sdk-python.git@v0.1.0"
+# uv add "claros-sdk[google] @ git+https://github.com/inductiv/claros-sdk-python.git@v1.0.0"
+# uv add "claros-sdk[stripe] @ git+https://github.com/inductiv/claros-sdk-python.git@v1.0.0"
 
 # Private repo via SSH
-uv add "git+ssh://git@github.com/inductiv/claros-sdk-python.git@v0.1.0"
+uv add "git+ssh://git@github.com/inductiv/claros-sdk-python.git@v1.0.0"
 
 # Or latest from main branch
 uv add "claros-sdk[all] @ git+https://github.com/inductiv/claros-sdk-python.git"
@@ -52,11 +52,11 @@ Pinning a release tag using `uv`:
 ```toml
 [project]
 dependencies = [
-    "claros-sdk[all]>=0.1.0",
+    "claros-sdk[all]>=1.0.0",
 ]
 
 [tool.uv.sources]
-claros-sdk = { git = "https://github.com/inductiv/claros-sdk-python.git", tag = "v0.1.0" }
+claros-sdk = { git = "https://github.com/inductiv/claros-sdk-python.git", tag = "v1.0.0" }
 ```
 
 Then synchronize dependencies:
@@ -370,6 +370,7 @@ registry = ToolRegistry.from_specs([
 ##### Invocation Calling Conventions
 
 Every tool handler (`tool.function`) automatically unpacks input parameters across standard calling conventions without manual conversion:
+
 1. **Agent Fabric style (`takes_ctx=True`)**: `await tool.function(ctx, args)`
 2. **Direct Pydantic style (`takes_ctx=False`)**: `await tool.function(args)`
 3. **Keyword style**: `await tool.function(code="print(1)", language="python")`
