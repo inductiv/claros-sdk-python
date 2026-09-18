@@ -332,7 +332,7 @@ async def test_concurrent_get_token_deduplication():
 
 @pytest.mark.asyncio
 async def test_real_stripe_client_initialization():
-    import stripe
+    stripe = pytest.importorskip("stripe")
 
     def handler(request: httpx.Request) -> httpx.Response:
         return httpx.Response(
@@ -358,6 +358,7 @@ async def test_real_stripe_client_initialization():
 
 @pytest.mark.asyncio
 async def test_real_google_dependencies_and_credentials():
+    pytest.importorskip("google.oauth2.credentials")
     from google.oauth2.credentials import Credentials
 
     def handler(request: httpx.Request) -> httpx.Response:

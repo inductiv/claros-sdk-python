@@ -55,7 +55,7 @@ jobs:
       - name: Run test suite
         if: steps.check_tag.outputs.exists == 'false'
         run: |
-          uv sync --group dev
+          uv sync --all-extras --group dev
           uv run pytest
 
       - name: Build distribution artifacts
