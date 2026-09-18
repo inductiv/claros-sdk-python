@@ -90,4 +90,7 @@ claude.md
 tasklog.md
 /docs/releases/
 
-sdk_test.py
+.codegraph/
+GEMINI.md
+.agents
+.specify

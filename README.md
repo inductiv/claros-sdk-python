@@ -1,5 +1,10 @@
 # ClarOS Python SDK
 
+[![Release](https://github.com/inductiv/claros-sdk-python/actions/workflows/release.yml/badge.svg)](https://github.com/inductiv/claros-sdk-python/actions/workflows/release.yml)
+[![Latest Tag](https://img.shields.io/github/v/tag/inductiv/claros-sdk-python?sort=semver&label=latest%20tag)](https://github.com/inductiv/claros-sdk-python/tags)
+[![GitHub Release](https://img.shields.io/github/v/release/inductiv/claros-sdk-python?sort=semver&label=release)](https://github.com/inductiv/claros-sdk-python/releases)
+[![Python Version](https://img.shields.io/badge/python-3.10%2B-blue)](pyproject.toml)
+
 Python SDK for machine-to-machine (M2M) communication, user authentication, tenant authorization, user-tenant resolution, and inbound real-time event streaming via the ClarOS platform services.
 
 ---
@@ -13,24 +18,51 @@ Python SDK for machine-to-machine (M2M) communication, user authentication, tena
 - **Modular Communication Channels**: Send messages and notifications through channel-specific adapters (`client.slack.send()`, `client.email.send()`, `client.discord.send()`) with scoped bot routing (`client.slack.bot()`).
 - **Inbound Real-time Event Streaming (SSE)**: Maintain real-time inbound connection to `/api/v1/comm/inbound/stream` with auto-reconnection, event deduplication, and contextual auto-reply (`event.reply()`).
 - **Third-Party Connectors (`client.connectors`)**: Fetch credentials and instantiate official third-party SDK clients (Google, Stripe) with in-memory token caching, automatic expiration tracking, and optional dependency extras.
+- **AI Agent Sandbox Code Execution (`client.sandbox`)**: Isolated code execution in Python, Bash, and Shell. Supports synchronous execution, asynchronous runs with real-time SSE streaming, stateful multi-step sessions, and standard AI agent tool schemas.
 - **Async API**: Built on `httpx.AsyncClient` for high-performance non-blocking I/O.
 
 ---
 
 ## Installation
 
+### Via `uv add`
+
 ```bash
-# Core SDK
-uv add "claros-sdk @ git+https://github.com/inductiv/claros-sdk-python.git"
+# Specific release tag (recommended)
+uv add "git+https://github.com/inductiv/claros-sdk-python.git@v0.1.0"
 
-# With Google connectors (google-api-python-client, google-auth)
-uv add "claros-sdk[google] @ git+https://github.com/inductiv/claros-sdk-python.git"
+# With all connectors (Google, Stripe, etc.)
+uv add "claros-sdk[all] @ git+https://github.com/inductiv/claros-sdk-python.git@v0.1.0"
 
-# With Stripe connectors (stripe)
-uv add "claros-sdk[stripe] @ git+https://github.com/inductiv/claros-sdk-python.git"
+# Individual connector extras:
+# uv add "claros-sdk[google] @ git+https://github.com/inductiv/claros-sdk-python.git@v0.1.0"
+# uv add "claros-sdk[stripe] @ git+https://github.com/inductiv/claros-sdk-python.git@v0.1.0"
 
-# With all connectors
+# Private repo via SSH
+uv add "git+ssh://git@github.com/inductiv/claros-sdk-python.git@v0.1.0"
+
+# Or latest from main branch
 uv add "claros-sdk[all] @ git+https://github.com/inductiv/claros-sdk-python.git"
+```
+
+### In `pyproject.toml`
+
+Pinning a release tag using `uv`:
+
+```toml
+[project]
+dependencies = [
+    "claros-sdk[all]>=0.1.0",
+]
+
+[tool.uv.sources]
+claros-sdk = { git = "https://github.com/inductiv/claros-sdk-python.git", tag = "v0.1.0" }
+```
+
+Then synchronize dependencies:
+
+```bash
+uv sync
 ```
 
 ---
@@ -230,6 +262,122 @@ for customer in customers.data:
 
 ---
 
+### 7. AI Agent Sandbox Code Execution (`client.sandbox`)
+
+Safely run isolated code blocks (Python, Bash, Shell) with automatic tenant context resolution, real-time output streaming, stateful sessions, and agent tool bindings:
+
+```python
+from claros_sdk import ClarOSClient
+
+async with ClarOSClient(base_url="https://api.claros.ai", tenant_id="tenant-123") as client:
+    # 1. Synchronous Execution
+    res = await client.sandbox.execute(
+        code="print('Hello from ClarOS sandbox!')",
+        language="python",
+    )
+    print(f"Stdout: {res.stdout.strip()} (Exit code: {res.exit_code})")
+
+    # 2. Asynchronous Execution with Real-Time SSE Streaming
+    res = await client.sandbox.run(
+        code="for i in {1..3}; do echo step $i; sleep 1; done",
+        language="bash",
+        on_chunk=lambda stream, chunk: print(f"[{stream.upper()}] {chunk}", end=""),
+    )
+
+    # 3. Stateful Multi-Step Sessions
+    async with client.sandbox.session() as session:
+        await session.execute("x = 42")
+        calc = await session.execute("print(x * 2)")
+        print(f"Result: {calc.stdout.strip()}")  # 84
+
+    # 4. Export OpenAI / Anthropic Tool Schemas
+    tools = client.sandbox.get_tools()
+    openai_schemas = [t.to_openai_tool() for t in tools]
+```
+
+#### Integrating with AI Agent Frameworks (e.g. Agent Fabric)
+
+The sandbox tools conform to agent function calling standards that take a Pydantic `BaseModel` args schema and an async handler.
+
+##### Option A: Bulk Registration from Tool Registry
+
+```python
+from agent_fabric import ToolKind, ToolRegistry, tool
+from claros_sdk import ClarOSClient
+
+client = ClarOSClient(base_url="https://api.claros.ai", tenant_id="tenant-123")
+tools = client.sandbox.get_tools()
+
+registry = ToolRegistry.from_specs([
+    tool(
+        t.name,
+        ToolKind.ACTION,
+        t.function,     # Async handler supporting (ctx, args) or (args)
+        t.args_schema,  # Pydantic BaseModel class
+        description=t.description,
+    )
+    for t in tools
+])
+```
+
+##### Option B: Explicit Tool Registration
+
+```python
+from agent_fabric import ToolKind, ToolRegistry, tool
+from claros_sdk import ClarOSClient
+from claros_sdk.sandbox import (
+    ExecuteCodeArgs,
+    ExecuteCodeAsyncArgs,
+    GetExecutionStatusArgs,
+    TerminateSessionArgs,
+)
+
+client = ClarOSClient(base_url="https://api.claros.ai", tenant_id="tenant-123")
+tools = {t.name: t for t in client.sandbox.get_tools()}
+
+registry = ToolRegistry.from_specs([
+    tool(
+        "execute_code",
+        ToolKind.ACTION,
+        tools["execute_code"].function,
+        ExecuteCodeArgs,
+        description="Execute code (Python, Bash, Shell) in an isolated sandbox with tenant scoping.",
+    ),
+    tool(
+        "execute_code_async",
+        ToolKind.ACTION,
+        tools["execute_code_async"].function,
+        ExecuteCodeAsyncArgs,
+        description="Enqueue background code execution and receive execution_id for output streaming.",
+    ),
+    tool(
+        "get_execution_status",
+        ToolKind.QUERY,
+        tools["get_execution_status"].function,
+        GetExecutionStatusArgs,
+        description="Fetch status and output buffer of an asynchronous execution.",
+    ),
+    tool(
+        "terminate_session",
+        ToolKind.ACTION,
+        tools["terminate_session"].function,
+        TerminateSessionArgs,
+        description="Terminate a stateful sandbox session and release its resources.",
+    ),
+])
+```
+
+##### Invocation Calling Conventions
+
+Every tool handler (`tool.function`) automatically unpacks input parameters across standard calling conventions without manual conversion:
+1. **Agent Fabric style (`takes_ctx=True`)**: `await tool.function(ctx, args)`
+2. **Direct Pydantic style (`takes_ctx=False`)**: `await tool.function(args)`
+3. **Keyword style**: `await tool.function(code="print(1)", language="python")`
+
+Tenant headers (`X-Tenant-ID`, `X-Workspace-ID`, `X-User-ID`, `Authorization`) are automatically injected from the `ClarOSClient` instance.
+
+---
+
 ## API Reference
 
 ### Client Class
@@ -279,6 +427,18 @@ for customer in customers.data:
 - **`client.channel(channel_type)` (`BaseChannel`)**:
   - Dynamically get or instantiate any communication channel adapter.
 
+#### AI Agent Sandbox Execution:
+
+- **`client.sandbox` (`SandboxManager`)**:
+  - `execute(code, language="python", session_id=None, timeout_seconds=None, network_enabled=None, env=None, ...)` -> `ExecuteResponse` (synchronous execution).
+  - `execute_async(code, language="python", ...)` -> `AsyncExecuteResponse` (enqueue background execution).
+  - `get_execution(execution_id)` -> `ExecuteResponse` (poll status and output buffer).
+  - `stream(execution_id)` -> `AsyncIterator[StreamEvent]` (stream SSE output chunks in real time).
+  - `run(code, language="python", on_chunk=None, ...)` -> `ExecuteResponse` (convenience runner: dispatches async, streams SSE chunks, and returns completed response).
+  - `session(session_id=None)` -> `SandboxSession` (stateful interactive sandbox session with `async with` context manager).
+  - `terminate_session(session_id)` -> `bool` (purge stateful session container resources).
+  - `get_tools()` -> `list[AgentTool]` (return AI agent tools with JSON Schemas and execution handlers).
+
 #### Inbound SSE Streaming:
 
 - **`listen()`**: Connects and continuously streams inbound SSE events.
@@ -300,6 +460,16 @@ for customer in customers.data:
   - `permissions`: `list[str]`
   - `license_tier`: `str`
   - `headers`: `dict[str, str]` (dictionary of `X-*` authorization headers)
+- **`ExecuteRequest`**:
+  - `code`: `str`, `language`: `Literal["python", "bash", "sh"]`, `session_id`: `str | None`, `timeout_seconds`: `int | None`, `network_enabled`: `bool | None`, `env`: `dict[str, str] | None`
+- **`ExecuteResponse`**:
+  - `execution_id`: `str | None`, `status`: `str`, `stdout`: `str`, `stderr`: `str`, `exit_code`: `int`, `duration_ms`: `int`, `is_success`: `bool`
+- **`AsyncExecuteResponse`**:
+  - `execution_id`: `str`, `message`: `str`, `status`: `str`
+- **`StreamEvent`**:
+  - `event`: `str`, `data`: `str`, `id`: `str | None`, `stream`: `Literal["stdout", "stderr", "system"] | None`
+- **`AgentTool`**:
+  - `name`: `str`, `description`: `str`, `parameters`: `dict[str, Any]`, `handler`: callable, `to_openai_tool()`: convert to OpenAI schema format
 - **`UserTenantResponse`**:
   - `success`: `bool`
   - `message`: `str`
@@ -330,3 +500,5 @@ for customer in customers.data:
 - **`ClarOSError`**: Base SDK exception.
 - **`ClarOSAuthError`**: Raised on token verification failure or unauthorized access.
 - **`ClarOSAPIError`**: Raised on remote service API errors (5xx/4xx responses).
+- **`ClarOSSandboxError`**: Raised on sandbox execution or session failures.
+- **`ClarOSSandboxTimeoutError`**: Raised when a sandbox execution exceeds its timeout.

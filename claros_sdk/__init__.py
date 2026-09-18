@@ -14,7 +14,13 @@ from claros_sdk.connectors import (
     ConnectorsManager,
 )
 from claros_sdk.events import EventEmitter
-from claros_sdk.exceptions import ClarOSAPIError, ClarOSAuthError, ClarOSError
+from claros_sdk.exceptions import (
+    ClarOSAPIError,
+    ClarOSAuthError,
+    ClarOSError,
+    ClarOSSandboxError,
+    ClarOSSandboxTimeoutError,
+)
 from claros_sdk.middleware import (
     ClarOSGuard,
     extract_bearer_token,
@@ -32,8 +38,23 @@ from claros_sdk.models import (
     UserTenantPayload,
     UserTenantResponse,
 )
+from claros_sdk.sandbox import (
+    AgentTool,
+    AsyncExecuteResponse,
+    ExecuteCodeArgs,
+    ExecuteCodeAsyncArgs,
+    ExecuteRequest,
+    ExecuteResponse,
+    GetExecutionStatusArgs,
+    SandboxManager,
+    SandboxSession,
+    StreamEvent,
+    TerminateSessionArgs,
+)
 
 __all__ = [
+    "AgentTool",
+    "AsyncExecuteResponse",
     "BaseChannel",
     "CachedConnectorToken",
     "ClarOSAPIError",
@@ -42,6 +63,8 @@ __all__ = [
     "ClarOSClient",
     "ClarOSError",
     "ClarOSGuard",
+    "ClarOSSandboxError",
+    "ClarOSSandboxTimeoutError",
     "ConnectorTokenData",
     "ConnectorTokenResponse",
     "ConnectorsManager",
@@ -49,14 +72,23 @@ __all__ = [
     "DiscordChannel",
     "EmailChannel",
     "EventEmitter",
+    "ExecuteCodeArgs",
+    "ExecuteCodeAsyncArgs",
+    "ExecuteRequest",
+    "ExecuteResponse",
+    "GetExecutionStatusArgs",
     "InboundEventMessage",
     "InboundEventSource",
     "InboundMessageEvent",
+    "SandboxManager",
+    "SandboxSession",
     "SlackBot",
     "SlackChannel",
+    "StreamEvent",
     "TenantAuthContextPayload",
     "TenantAuthContextResponse",
     "TenantDetail",
+    "TerminateSessionArgs",
     "TokenVerifyPayload",
     "TokenVerifyResponse",
     "UserTenantPayload",

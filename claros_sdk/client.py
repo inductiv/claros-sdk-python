@@ -24,6 +24,7 @@ from claros_sdk.models import (
     TokenVerifyResponse,
     UserTenantResponse,
 )
+from claros_sdk.sandbox.manager import SandboxManager
 
 logger = logging.getLogger(__name__)
 
@@ -40,11 +41,18 @@ class ClarOSClient:
         client_secret: str | None = None,
         timeout: float = 10.0,
         httpx_client: httpx.AsyncClient | None = None,
+        tenant_id: str | None = None,
+        workspace_id: str | None = None,
+        user_id: str | None = None,
     ) -> None:
         self.base_url = base_url.rstrip("/")
         self.client_id = client_id
         self.client_secret = client_secret
         self.timeout = timeout
+        self.tenant_id = tenant_id
+        self.workspace_id = workspace_id
+        self.user_id = user_id
+        self._auth_context: ClarOSAuthContext | None = None
 
         self._external_client = httpx_client is not None
         self._client = httpx_client or httpx.AsyncClient(timeout=timeout)
@@ -69,6 +77,9 @@ class ClarOSClient:
 
         # Third-party Integrations & Connectors
         self.connectors = ConnectorsManager(self)
+
+        # AI Agent Sandbox Execution Wrapper
+        self.sandbox = SandboxManager(self)
 
     def _get_lock(self) -> asyncio.Lock:
         if self._connection_lock is None:
@@ -366,7 +377,7 @@ class ClarOSClient:
             workspace_id=workspace_id,
         )
         p = ctx_res.payload
-        return ClarOSAuthContext(
+        auth_ctx = ClarOSAuthContext(
             user_id=p.user_id,
             tenant_id=p.tenant_id,
             tenant_slug=p.tenant_slug,
@@ -375,6 +386,45 @@ class ClarOSClient:
             license_tier=p.license_tier,
             headers=p.headers,
         )
+        self._auth_context = auth_ctx
+        if not self.tenant_id and p.tenant_id:
+            self.tenant_id = p.tenant_id
+        if not self.user_id and p.user_id:
+            self.user_id = p.user_id
+        if not self.workspace_id and p.headers and "X-Workspace-ID" in p.headers:
+            self.workspace_id = p.headers["X-Workspace-ID"]
+        return auth_ctx
+
+    def get_tenant_headers(
+        self,
+        tenant_id: str | None = None,
+        workspace_id: str | None = None,
+        user_id: str | None = None,
+    ) -> dict[str, str]:
+        """
+        Resolve tenant and workspace headers from active context and explicit overrides.
+        """
+        headers: dict[str, str] = {}
+        resolved_tenant = tenant_id or self.tenant_id or (self._auth_context.tenant_id if self._auth_context else None)
+        if resolved_tenant:
+            headers["X-Tenant-ID"] = resolved_tenant
+
+        resolved_workspace = workspace_id or self.workspace_id
+        if not resolved_workspace and self._auth_context and self._auth_context.headers:
+            resolved_workspace = self._auth_context.headers.get("X-Workspace-ID")
+        if resolved_workspace:
+            headers["X-Workspace-ID"] = resolved_workspace
+
+        resolved_user = user_id or self.user_id or (self._auth_context.user_id if self._auth_context else None)
+        if resolved_user:
+            headers["X-User-ID"] = resolved_user
+
+        if self._auth_context and self._auth_context.headers:
+            for k, v in self._auth_context.headers.items():
+                if k not in headers:
+                    headers[k] = v
+
+        return headers
 
     # ---------------------------------------------------------------------------
     # Inbound SSE Connection Management

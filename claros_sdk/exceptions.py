@@ -17,3 +17,11 @@ class ClarOSAPIError(ClarOSError):
         self.status_code = status_code
         self.message = message
         self.payload = payload or {}
+
+
+class ClarOSSandboxError(ClarOSAPIError):
+    """Raised when sandbox code execution or session operation fails."""
+
+
+class ClarOSSandboxTimeoutError(ClarOSSandboxError):
+    """Raised when sandbox code execution exceeds configured timeout."""
