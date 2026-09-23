@@ -60,7 +60,7 @@ dependencies = [
 claros-sdk = { git = "https://github.com/inductiv/claros-sdk-python.git", tag = "vX.Y.Z" }
 ```
 
-Check the Latest release version and replace `X.Y.Z`.
+Replace `X.Y.Z` with [![Latest Tag](https://img.shields.io/github/v/tag/inductiv/claros-sdk-python?sort=semver&label=latest%20tag)](https://github.com/inductiv/claros-sdk-python/tags)
 
 Then synchronize dependencies:
 
