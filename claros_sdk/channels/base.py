@@ -55,3 +55,67 @@ class BaseChannel:
     async def send(self, *args: Any, **kwargs: Any) -> dict[str, Any]:
         """Send a message through this channel."""
         raise NotImplementedError("Channel subclasses must implement send()")
+
+
+class ChannelBot:
+    """Scoped bot client bound to a specific config_key."""
+
+    def __init__(self, channel: ChatChannel, config_key: str) -> None:
+        self._channel = channel
+        self.config_key = config_key
+
+    async def send(
+        self,
+        message: str = "",
+        channel: str | None = None,
+        title: str | None = None,
+        **kwargs: Any,
+    ) -> dict[str, Any]:
+        """Send a message scoped to this bot's config_key."""
+        return await self._channel.send(
+            message=message,
+            channel=channel,
+            title=title,
+            config_key=self.config_key,
+            **kwargs,
+        )
+
+    def on_message(
+        self, handler: Callable[[InboundMessageEvent], Any] | None = None
+    ) -> Callable[[InboundMessageEvent], Any]:
+        """Listen only to messages sent to this bot (matching config_key)."""
+        self._channel._client.ensure_stream_connected()
+        event_name = f"{self._channel.channel_type}.message.{self.config_key}"
+        return self._channel._client.dispatcher.on(event_name, handler)
+
+
+class ChatChannel(BaseChannel):
+    """Base adapter for chat messaging channels (Slack, Discord)."""
+
+    bot_class: type[ChannelBot] = ChannelBot
+
+    def bot(self, config_key: str) -> Any:
+        """Create a scoped bot client for a specific config_key."""
+        return self.bot_class(self, config_key=config_key)
+
+    async def send(
+        self,
+        message: str = "",
+        channel: str | None = None,
+        title: str | None = None,
+        config_key: str | None = None,
+        **kwargs: Any,
+    ) -> dict[str, Any]:
+        """Send a chat message."""
+        payload: dict[str, Any] = {}
+        if message:
+            payload["message"] = message
+        if title:
+            payload["title"] = title
+        if channel:
+            payload["recipient"] = channel
+        if config_key is not None:
+            payload["config_key"] = config_key
+        payload.update(kwargs)
+        return await self._client.post(f"/api/v1/comm/{self.channel_type}", json=payload)
+

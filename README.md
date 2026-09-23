@@ -29,17 +29,18 @@ Python SDK for machine-to-machine (M2M) communication, user authentication, tena
 
 ```bash
 # Specific release tag (recommended)
-uv add "git+https://github.com/inductiv/claros-sdk-python.git@v1.0.0"
+uv add "git+https://github.com/inductiv/claros-sdk-python.git@vX.Y.Z"
 
 # With all connectors (Google, Stripe, etc.)
-uv add "claros-sdk[all] @ git+https://github.com/inductiv/claros-sdk-python.git@v1.0.0"
+uv add "claros-sdk[all] @ git+https://github.com/inductiv/claros-sdk-python.git@vX.Y.Z"
 
 # Individual connector extras:
-# uv add "claros-sdk[google] @ git+https://github.com/inductiv/claros-sdk-python.git@v1.0.0"
-# uv add "claros-sdk[stripe] @ git+https://github.com/inductiv/claros-sdk-python.git@v1.0.0"
+# uv add "claros-sdk[google] @ git+https://github.com/inductiv/claros-sdk-python.git@vX.Y.Z"
+# uv add "claros-sdk[stripe] @ git+https://github.com/inductiv/claros-sdk-python.git@vX.Y.Z"
+# uv add "claros-sdk[clickhouse] @ git+https://github.com/inductiv/claros-sdk-python.git@vX.Y.Z"
 
 # Private repo via SSH
-uv add "git+ssh://git@github.com/inductiv/claros-sdk-python.git@v1.0.0"
+uv add "git+ssh://git@github.com/inductiv/claros-sdk-python.git@vX.Y.Z"
 
 # Or latest from main branch
 uv add "claros-sdk[all] @ git+https://github.com/inductiv/claros-sdk-python.git"
@@ -52,12 +53,14 @@ Pinning a release tag using `uv`:
 ```toml
 [project]
 dependencies = [
-    "claros-sdk[all]>=1.0.0",
+    "claros-sdk[all]>=X.Y.Z",
 ]
 
 [tool.uv.sources]
-claros-sdk = { git = "https://github.com/inductiv/claros-sdk-python.git", tag = "v1.0.0" }
+claros-sdk = { git = "https://github.com/inductiv/claros-sdk-python.git", tag = "vX.Y.Z" }
 ```
+
+Check the Latest release version and replace `X.Y.Z`.
 
 Then synchronize dependencies:
 
@@ -219,9 +222,9 @@ if __name__ == "__main__":
 
 ---
 
-### 6. Third-Party Connectors (`google`, `stripe`)
+### 6. Third-Party Connectors (`google`, `stripe`, `clickhouse`)
 
-Use `client.connectors` to dynamically retrieve connection tokens from ClarOS and build official third-party SDK client instances with credentials applied automatically:
+Use `client.connectors` to dynamically resolve connection credentials from ClarOS and build official third-party SDK client instances automatically:
 
 ```python
 from claros_sdk import ClarOSClient
@@ -258,6 +261,13 @@ stripe_client = await client.connectors.stripe("stripe")
 customers = stripe_client.customers.list(limit=5)
 for customer in customers.data:
     print(customer.id, customer.email)
+
+# 3. ClickHouse Connector (requires 'clickhouse-connect')
+# uv add "claros-sdk[clickhouse]"
+ch_client = await client.connectors.clickhouse("clickhouse")
+# Returns official clickhouse_connect client instance with credentials applied:
+query_res = ch_client.query("SELECT 1")
+print(query_res.result_rows)
 ```
 
 ---

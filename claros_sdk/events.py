@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import inspect
 import logging
+from collections import defaultdict
 from collections.abc import Callable
 from typing import Any
 
@@ -12,7 +13,7 @@ class EventEmitter:
     """Async-compatible event emitter for ClarOS SDK."""
 
     def __init__(self) -> None:
-        self._listeners: dict[str, list[Callable[..., Any]]] = {}
+        self._listeners: dict[str, list[Callable[..., Any]]] = defaultdict(list)
 
     def on(
         self, event: str, handler: Callable[..., Any] | None = None
@@ -28,8 +29,6 @@ class EventEmitter:
         """
 
         def decorator(fn: Callable[..., Any]) -> Callable[..., Any]:
-            if event not in self._listeners:
-                self._listeners[event] = []
             if fn not in self._listeners[event]:
                 self._listeners[event].append(fn)
             return fn
@@ -43,9 +42,7 @@ class EventEmitter:
         if event in self._listeners and handler in self._listeners[event]:
             self._listeners[event].remove(handler)
 
-    def remove_listener(self, event: str, handler: Callable[..., Any]) -> None:
-        """Alias for off()."""
-        self.off(event, handler)
+    remove_listener = off
 
     def remove_all_listeners(self, event: str | None = None) -> None:
         """Remove all listeners for a specific event or for all events if event is None."""

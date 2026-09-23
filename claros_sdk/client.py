@@ -286,9 +286,6 @@ class ClarOSClient:
         except Exception as exc:
             raise ClarOSError(f"Failed to parse user tenant response: {exc}") from exc
 
-    # Alias for ResolveUserTenant
-    ResolveUserTenant = resolve_user_tenant
-
     # ---------------------------------------------------------------------------
     # 2-Hop Authentication & Authorization Context
     # ---------------------------------------------------------------------------

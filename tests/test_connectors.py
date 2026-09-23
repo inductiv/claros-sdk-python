@@ -67,46 +67,48 @@ async def test_get_token_and_caching():
     call_counts = {"token": 0}
 
     def handler(request: httpx.Request) -> httpx.Response:
-        assert request.url.path == "/api/v1/platform/connectors/sheets/token"
+        assert request.url.path == "/api/v1/platform/connectors/sheets/resolve"
         call_counts["token"] += 1
         return httpx.Response(
             200,
             json={
-                "code": 200,
-                "message": "Connector token retrieved successfully",
-                "data": {
-                    "token": "ya29.mock_token_abc",
-                    "token_type": "Bearer",
+                "success": True,
+                "message": "Connector credentials resolved successfully",
+                "payload": {
+                    "connection_key": "sheets",
+                    "provider": "google",
+                    "credentials": {
+                        "access_token": "ya29.mock_token_abc",
+                        "token_type": "Bearer",
+                    },
                     "expires_at": "2099-09-07T12:58:30Z",
                     "expires_in": 3600,
-                    "provider": "google",
-                    "connection_key": "sheets",
                 },
             },
         )
 
     httpx_client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
     async with ClarOSClient(base_url="http://localhost:8080", httpx_client=httpx_client) as client:
-        # First call fetches from API
-        token_data = await client.connectors.get_token("sheets")
+        # First call fetches from API via resolve
+        token_data = await client.connectors.resolve("sheets")
         assert token_data.token == "ya29.mock_token_abc"
         assert token_data.provider == "google"
         assert token_data.connection_key == "sheets"
         assert call_counts["token"] == 1
 
-        # Second call returns from in-memory cache
+        # Second call returns from in-memory cache via get_token alias
         cached_token = await client.connectors.get_token("sheets")
         assert cached_token.token == "ya29.mock_token_abc"
         assert call_counts["token"] == 1
 
         # Force refresh bypasses cache
-        refreshed = await client.connectors.get_token("sheets", force_refresh=True)
+        refreshed = await client.connectors.resolve("sheets", force_refresh=True)
         assert refreshed.token == "ya29.mock_token_abc"
         assert call_counts["token"] == 2
 
         # Clear cache works
         client.connectors.clear_cache("sheets")
-        after_clear = await client.connectors.get_token("sheets")
+        after_clear = await client.connectors.resolve("sheets")
         assert after_clear.token == "ya29.mock_token_abc"
         assert call_counts["token"] == 3
 
@@ -390,3 +392,150 @@ async def test_real_google_dependencies_and_credentials():
             creds = kwargs.get("credentials")
             assert isinstance(creds, Credentials)
             assert creds.token == "ya29.real_google_token"
+
+
+@pytest.mark.asyncio
+async def test_google_client_with_refresh_token():
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            200,
+            json={
+                "success": True,
+                "message": "OK",
+                "payload": {
+                    "connection_key": "sheets",
+                    "provider": "google",
+                    "credentials": {
+                        "access_token": "ya29.mock_access_token",
+                        "refresh_token": "1//mock_refresh_token",
+                        "token_type": "Bearer",
+                    },
+                },
+            },
+        )
+
+    mock_credentials = MagicMock()
+    mock_creds_cls = MagicMock(return_value=mock_credentials)
+    mock_creds_mod = MagicMock(Credentials=mock_creds_cls)
+    mock_discovery = MagicMock(build=MagicMock())
+
+    mock_modules = {
+        "google": MagicMock(),
+        "google.auth": MagicMock(),
+        "google.oauth2": MagicMock(),
+        "google.oauth2.credentials": mock_creds_mod,
+        "googleapiclient": MagicMock(discovery=mock_discovery),
+        "googleapiclient.discovery": mock_discovery,
+    }
+
+    with patch.dict("sys.modules", mock_modules):
+        httpx_client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
+        async with ClarOSClient(base_url="http://localhost:8080", httpx_client=httpx_client) as client:
+            await client.connectors.google("sheets")
+            mock_creds_cls.assert_called_once_with(
+                token="ya29.mock_access_token",
+                refresh_token="1//mock_refresh_token",
+            )
+
+
+@pytest.mark.asyncio
+async def test_stripe_client_with_credentials_api_key():
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            200,
+            json={
+                "success": True,
+                "message": "OK",
+                "payload": {
+                    "connection_key": "stripe",
+                    "provider": "stripe",
+                    "credentials": {
+                        "api_key": "sk_test_from_credentials",
+                    },
+                },
+            },
+        )
+
+    mock_instance = MagicMock(name="StripeClientInstance")
+    mock_stripe_cls = MagicMock(return_value=mock_instance)
+    mock_stripe_mod = MagicMock(StripeClient=mock_stripe_cls)
+
+    with patch.dict("sys.modules", {"stripe": mock_stripe_mod}):
+        httpx_client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
+        async with ClarOSClient(base_url="http://localhost:8080", httpx_client=httpx_client) as client:
+            stripe = await client.connectors.stripe("stripe")
+            mock_stripe_cls.assert_called_once_with(api_key="sk_test_from_credentials")
+            assert stripe == mock_instance
+
+
+@pytest.mark.asyncio
+async def test_clickhouse_missing_dependency_raises_helpful_error():
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            200,
+            json={
+                "success": True,
+                "message": "OK",
+                "payload": {
+                    "connection_key": "clickhouse",
+                    "provider": "clickhouse",
+                    "credentials": {
+                        "host": "localhost",
+                        "port": 8123,
+                    },
+                },
+            },
+        )
+
+    httpx_client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
+    async with ClarOSClient(base_url="http://localhost:8080", httpx_client=httpx_client) as client:
+        with patch.dict("sys.modules", {"clickhouse_connect": None}):
+            with pytest.raises(ClarOSError) as exc_info:
+                await client.connectors.clickhouse("clickhouse")
+            assert "pip install 'claros-sdk[clickhouse]'" in str(exc_info.value)
+
+
+@pytest.mark.asyncio
+async def test_clickhouse_client_build():
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            200,
+            json={
+                "success": True,
+                "message": "OK",
+                "payload": {
+                    "auth_type": "basic",
+                    "connection_key": "clickhouse_prod",
+                    "connector_id": "conn_123",
+                    "credentials": {
+                        "database": "analytics",
+                        "host": "70.153.100.10",
+                        "password": "secret_password",
+                        "port": "8123",
+                        "protocol": "http",
+                        "username": "admin",
+                    },
+                    "provider": "clickhouse",
+                    "status": "connected",
+                },
+            },
+        )
+
+    mock_client = MagicMock(name="ClickHouseClientInstance")
+    mock_get_client = MagicMock(return_value=mock_client)
+    mock_ch_mod = MagicMock(get_client=mock_get_client)
+
+    with patch.dict("sys.modules", {"clickhouse_connect": mock_ch_mod}):
+        httpx_client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
+        async with ClarOSClient(base_url="http://localhost:8080", httpx_client=httpx_client) as client:
+            ch = await client.connectors.clickhouse("clickhouse_prod")
+            mock_get_client.assert_called_once_with(
+                host="70.153.100.10",
+                port=8123,
+                username="admin",
+                password="secret_password",
+                database="analytics",
+                interface="http",
+            )
+            assert ch == mock_client
+

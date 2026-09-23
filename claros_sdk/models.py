@@ -108,6 +108,7 @@ class InboundEventSource(BaseModel):
     workspace_id: str = ""
     channel_id: str = ""
     user_id: str = ""
+    user_email: str = ""
     thread_id: str | None = None
     message_id: str = ""
 
@@ -159,27 +160,10 @@ class InboundMessageEvent(BaseModel):
         target_channel = channel_id if channel_id else None
         config_key = self.config_key if self.config_key else None
 
-        if self.channel_type == "slack":
-            return await client.slack.send(
-                channel=target_channel,
-                message=message,
-                title=title,
-                config_key=config_key,
-                **kwargs,
-            )
-        elif self.channel_type == "discord":
-            return await client.discord.send(
-                channel=target_channel,
-                message=message,
-                title=title,
-                config_key=config_key,
-                **kwargs,
-            )
-        else:
-            return await client.channel(self.channel_type).send(
-                channel=target_channel,
-                message=message,
-                title=title,
-                config_key=config_key,
-                **kwargs,
-            )
+        return await client.channel(self.channel_type).send(
+            channel=target_channel,
+            message=message,
+            title=title,
+            config_key=config_key,
+            **kwargs,
+        )

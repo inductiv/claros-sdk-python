@@ -56,8 +56,12 @@ def build_google_client(
     if version is None:
         version = DEFAULT_SERVICE_VERSIONS.get(service, "v1")
 
-    # Initialize Google OAuth2 credentials with the Bearer access token
-    credentials = Credentials(token=token_data.token)
+    access_token = token_data.credentials.get("access_token") or token_data.token
+    refresh_token = token_data.credentials.get("refresh_token")
 
-    # Build and return the raw official Google API resource
+    if refresh_token:
+        credentials = Credentials(token=access_token, refresh_token=refresh_token)
+    else:
+        credentials = Credentials(token=access_token)
+
     return build(serviceName=service, version=version, credentials=credentials, **kwargs)

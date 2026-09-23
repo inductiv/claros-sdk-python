@@ -9,6 +9,8 @@ from claros_sdk.channels import (
 from claros_sdk.client import ClarOSClient
 from claros_sdk.connectors import (
     CachedConnectorToken,
+    ConnectorResolvePayload,
+    ConnectorResolveResponse,
     ConnectorTokenData,
     ConnectorTokenResponse,
     ConnectorsManager,
@@ -65,6 +67,8 @@ __all__ = [
     "ClarOSGuard",
     "ClarOSSandboxError",
     "ClarOSSandboxTimeoutError",
+    "ConnectorResolvePayload",
+    "ConnectorResolveResponse",
     "ConnectorTokenData",
     "ConnectorTokenResponse",
     "ConnectorsManager",

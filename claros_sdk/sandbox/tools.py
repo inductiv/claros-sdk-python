@@ -38,34 +38,8 @@ class ExecuteCodeArgs(BaseModel):
     )
 
 
-class ExecuteCodeAsyncArgs(BaseModel):
+class ExecuteCodeAsyncArgs(ExecuteCodeArgs):
     """Arguments for enqueuing code for background execution in a sandbox."""
-
-    model_config = ConfigDict(extra="allow")
-
-    code: str = Field(..., description="The code block or shell commands to execute")
-    language: Literal["python", "bash", "sh"] = Field(
-        default="python",
-        description="Programming language/runtime ('python', 'bash', 'sh')",
-    )
-    session_id: str | None = Field(
-        default=None,
-        description="Optional stateful session ID",
-    )
-    timeout_seconds: int | None = Field(
-        default=None,
-        ge=1,
-        le=3600,
-        description="Maximum execution time in seconds",
-    )
-    network_enabled: bool | None = Field(
-        default=None,
-        description="Whether network/internet access is enabled in the sandbox",
-    )
-    env: dict[str, str] | None = Field(
-        default=None,
-        description="Environment variables to pass into the sandbox",
-    )
 
 
 class GetExecutionStatusArgs(BaseModel):

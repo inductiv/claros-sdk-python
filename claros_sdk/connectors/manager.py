@@ -4,9 +4,11 @@ import asyncio
 import logging
 from typing import TYPE_CHECKING, Any, Literal, overload
 
+from claros_sdk.connectors.clickhouse import build_clickhouse_client
 from claros_sdk.connectors.google import DEFAULT_SERVICE_VERSIONS, build_google_client
 from claros_sdk.connectors.models import (
     CachedConnectorToken,
+    ConnectorResolveResponse,
     ConnectorTokenData,
     ConnectorTokenResponse,
 )
@@ -15,6 +17,7 @@ from claros_sdk.exceptions import ClarOSAPIError, ClarOSError
 
 if TYPE_CHECKING:
     import stripe
+    from clickhouse_connect.driver.client import Client as ClickHouseClient
     from googleapiclient.discovery import Resource
 
     import googleapiclient._apis.calendar.v3
@@ -29,9 +32,9 @@ logger = logging.getLogger(__name__)
 
 class ConnectorsManager:
     """
-    Manager for ClarOS third-party connectors (Google, Stripe, etc.).
+    Manager for ClarOS third-party connectors (Google, Stripe, ClickHouse, etc.).
 
-    Handles token retrieval, in-memory caching with expiration/leeway,
+    Handles credential resolution, in-memory caching with expiration/leeway,
     and official SDK client construction with applied credentials.
     """
 
@@ -57,13 +60,13 @@ class ConnectorsManager:
         else:
             self._cache.clear()
 
-    async def get_token(
+    async def resolve(
         self,
         key: str,
         force_refresh: bool = False,
     ) -> ConnectorTokenData:
         """
-        Fetch connection token for the specified key from ClarOS API.
+        Resolve connection credentials for the specified key from ClarOS API.
         Caches token in-memory and reuses it if still valid according to expires_at / expires_in.
         """
         if not force_refresh and key in self._cache:
@@ -73,33 +76,36 @@ class ConnectorsManager:
 
         lock = self._get_lock(key)
         async with lock:
-            # Double check cache inside lock
             if not force_refresh and key in self._cache:
                 cached = self._cache[key]
                 if cached.is_valid(leeway_seconds=self.leeway_seconds):
                     return cached.data
 
-            path = f"/api/v1/platform/connectors/{key}/token"
+            path = f"/api/v1/platform/connectors/{key}/resolve"
             try:
                 res = await self._client.get(path)
             except ClarOSAPIError:
                 raise
             except Exception as exc:
                 raise ClarOSError(
-                    f"Failed to fetch connector token for key '{key}': {exc}"
+                    f"Failed to resolve connector credentials for key '{key}': {exc}"
                 ) from exc
 
-            # Parse response data (supports data, payload, or flat token)
-            if isinstance(res, dict) and "data" in res and isinstance(res["data"], dict):
-                token_data = ConnectorTokenData.model_validate(res["data"])
-            elif isinstance(res, dict) and "payload" in res and isinstance(res["payload"], dict):
+            if isinstance(res, dict) and "payload" in res and isinstance(res["payload"], dict):
                 token_data = ConnectorTokenData.model_validate(res["payload"])
-            elif isinstance(res, dict) and "token" in res:
+            elif isinstance(res, dict) and "data" in res and isinstance(res["data"], dict):
+                token_data = ConnectorTokenData.model_validate(res["data"])
+            elif isinstance(res, dict) and ("token" in res or "credentials" in res):
                 token_data = ConnectorTokenData.model_validate(res)
             else:
                 try:
-                    resp_model = ConnectorTokenResponse.model_validate(res)
-                    token_data = resp_model.data
+                    resp_model = ConnectorResolveResponse.model_validate(res)
+                    if resp_model.payload is not None:
+                        token_data = resp_model.payload
+                    elif resp_model.data is not None:
+                        token_data = resp_model.data
+                    else:
+                        raise ValueError("No payload or data in response")
                 except Exception as exc:
                     raise ClarOSError(
                         f"Unexpected connector response structure from '{path}': {res}"
@@ -107,6 +113,8 @@ class ConnectorsManager:
 
             self._cache[key] = CachedConnectorToken(token_data)
             return token_data
+
+    get_token = resolve
 
     @overload
     async def google(
@@ -176,7 +184,7 @@ class ConnectorsManager:
             force_refresh: Whether to force re-fetching the token from ClarOS.
             **kwargs: Extra arguments passed to googleapiclient.discovery.build().
         """
-        token_data = await self.get_token(key, force_refresh=force_refresh)
+        token_data = await self.resolve(key, force_refresh=force_refresh)
 
         if service is None:
             service = key if key in DEFAULT_SERVICE_VERSIONS else "sheets"
@@ -202,6 +210,24 @@ class ConnectorsManager:
             force_refresh: Whether to force re-fetching the token from ClarOS.
             **kwargs: Extra arguments passed to stripe.StripeClient().
         """
-        token_data = await self.get_token(key, force_refresh=force_refresh)
+        token_data = await self.resolve(key, force_refresh=force_refresh)
 
         return build_stripe_client(token_data=token_data, **kwargs)
+
+    async def clickhouse(
+        self,
+        key: str,
+        force_refresh: bool = False,
+        **kwargs: Any,
+    ) -> ClickHouseClient:
+        """
+        Obtain official ClickHouse client with credentials for connection key.
+
+        Parameters:
+            key: Connection key configured in ClarOS (e.g. 'clickhouse').
+            force_refresh: Whether to force re-fetching the credentials from ClarOS.
+            **kwargs: Extra arguments passed to clickhouse_connect.get_client().
+        """
+        token_data = await self.resolve(key, force_refresh=force_refresh)
+
+        return build_clickhouse_client(token_data=token_data, **kwargs)

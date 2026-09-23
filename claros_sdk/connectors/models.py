@@ -2,31 +2,67 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 import time
+from typing import Any
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 
 
 class ConnectorTokenData(BaseModel):
-    """Token and metadata payload for a third-party connection."""
+    """Token and credentials payload for a third-party connection."""
 
     model_config = ConfigDict(extra="allow")
 
-    token: str
-    token_type: str = "Bearer"
+    connection_key: str
+    provider: str
+    credentials: dict[str, Any] = Field(default_factory=dict)
+    auth_type: str | None = None
+    connector_id: str | None = None
+    status: str | None = None
+    tenant_id: str | None = None
+    metadata: Any = None
     expires_at: datetime | str | None = None
     expires_in: int | float | None = None
-    provider: str
-    connection_key: str
+
+    token: str | None = None
+    token_type: str | None = None
+
+    def model_post_init(self, __context: Any) -> None:
+        if not self.token:
+            if "access_token" in self.credentials:
+                object.__setattr__(self, "token", self.credentials["access_token"])
+            elif "token" in self.credentials:
+                object.__setattr__(self, "token", self.credentials["token"])
+            elif "api_key" in self.credentials:
+                object.__setattr__(self, "token", self.credentials["api_key"])
+            else:
+                object.__setattr__(self, "token", "")
+        elif self.token and not self.credentials:
+            object.__setattr__(self, "credentials", {"token": self.token, "api_key": self.token})
+
+        if not self.token_type:
+            tt = self.credentials.get("token_type") or "Bearer"
+            object.__setattr__(self, "token_type", tt)
 
 
-class ConnectorTokenResponse(BaseModel):
-    """Response returned by ClarOS GET /api/v1/platform/connectors/:key/token."""
+class ConnectorResolveResponse(BaseModel):
+    """Response returned by ClarOS GET /api/v1/platform/connectors/:key/resolve."""
 
     model_config = ConfigDict(extra="allow")
 
-    code: int = 200
+    success: bool = True
     message: str = ""
-    data: ConnectorTokenData
+    payload: ConnectorTokenData | None = None
+    data: ConnectorTokenData | None = None
+
+    def model_post_init(self, __context: Any) -> None:
+        if self.payload is None and self.data is not None:
+            object.__setattr__(self, "payload", self.data)
+        elif self.data is None and self.payload is not None:
+            object.__setattr__(self, "data", self.payload)
+
+
+ConnectorResolvePayload = ConnectorTokenData
+ConnectorTokenResponse = ConnectorResolveResponse
 
 
 class CachedConnectorToken:
@@ -42,7 +78,7 @@ class CachedConnectorToken:
 
     @property
     def token(self) -> str:
-        return self.data.token
+        return self.data.token or ""
 
     def is_valid(self, leeway_seconds: float = 60.0) -> bool:
         """
@@ -52,13 +88,11 @@ class CachedConnectorToken:
         """
         current_time = time.time()
 
-        # Check expires_at if present
         if self.data.expires_at is not None:
             if isinstance(self.data.expires_at, datetime):
                 expires_at_dt = self.data.expires_at
             else:
                 try:
-                    # Support ISO strings like 2026-09-07T12:58:30Z
                     dt_str = str(self.data.expires_at).replace("Z", "+00:00")
                     expires_at_dt = datetime.fromisoformat(dt_str)
                 except Exception:
@@ -70,10 +104,8 @@ class CachedConnectorToken:
                 expire_timestamp = expires_at_dt.timestamp()
                 return current_time < (expire_timestamp - leeway_seconds)
 
-        # Fall back to expires_in relative to cached_at
         if self.data.expires_in is not None:
             expire_timestamp = self.cached_at + float(self.data.expires_in)
             return current_time < (expire_timestamp - leeway_seconds)
 
-        # If neither expiration is given (e.g. ApiKey), consider token valid
         return True

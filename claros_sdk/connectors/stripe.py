@@ -38,4 +38,6 @@ def build_stripe_client(
 
     import stripe
 
-    return stripe.StripeClient(api_key=token_data.token, **kwargs)
+    api_key = token_data.credentials.get("api_key") or token_data.token
+
+    return stripe.StripeClient(api_key=api_key, **kwargs)
