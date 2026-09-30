@@ -14,6 +14,8 @@ from claros_sdk.connectors import (
     ConnectorTokenData,
     ConnectorTokenResponse,
     ConnectorsManager,
+    HTTPConnector,
+    build_http_connector,
 )
 from claros_sdk.events import EventEmitter
 from claros_sdk.exceptions import (
@@ -81,6 +83,7 @@ __all__ = [
     "ExecuteRequest",
     "ExecuteResponse",
     "GetExecutionStatusArgs",
+    "HTTPConnector",
     "InboundEventMessage",
     "InboundEventSource",
     "InboundMessageEvent",
@@ -97,5 +100,6 @@ __all__ = [
     "TokenVerifyResponse",
     "UserTenantPayload",
     "UserTenantResponse",
+    "build_http_connector",
     "extract_bearer_token",
 ]

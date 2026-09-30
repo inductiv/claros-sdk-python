@@ -17,7 +17,7 @@ Python SDK for machine-to-machine (M2M) communication, user authentication, tena
 - **Automatic OAuth2 M2M Authentication**: Obtains and caches access tokens using the `client_credentials` grant flow (`POST /api/v1/auth/oauth/token`). Supports both standard and wrapped JSON token payloads.
 - **Modular Communication Channels**: Send messages and notifications through channel-specific adapters (`client.slack.send()`, `client.email.send()`, `client.discord.send()`) with scoped bot routing (`client.slack.bot()`).
 - **Inbound Real-time Event Streaming (SSE)**: Maintain real-time inbound connection to `/api/v1/comm/inbound/stream` with auto-reconnection, event deduplication, and contextual auto-reply (`event.reply()`).
-- **Third-Party Connectors (`client.connectors`)**: Fetch credentials and instantiate official third-party SDK clients (Google, Stripe) with in-memory token caching, automatic expiration tracking, and optional dependency extras.
+- **Third-Party Connectors (`client.connectors`)**: Fetch credentials and instantiate official SDK clients (Google, Stripe, ClickHouse) or call custom HTTP/MCP endpoints with authentication applied and in-memory token caching.
 - **AI Agent Sandbox Code Execution (`client.sandbox`)**: Isolated code execution in Python, Bash, and Shell. Supports synchronous execution, asynchronous runs with real-time SSE streaming, stateful multi-step sessions, and standard AI agent tool schemas.
 - **Async API**: Built on `httpx.AsyncClient` for high-performance non-blocking I/O.
 
@@ -148,9 +148,32 @@ for tenant in user_tenant.payload.tenants:
 
 ---
 
-### 4. Machine-to-Machine (M2M) & Outbound Communication
+### 4. Machine-to-Machine (M2M) OAuth2 Authentication (`get_token`)
 
-`client_id` and `client_secret` are **only required** when acquiring M2M OAuth access tokens or using communication APIs:
+`client_id` and `client_secret` are required when acquiring M2M OAuth access tokens using the `client_credentials` grant flow (`POST /api/v1/auth/oauth/token`):
+
+```python
+from claros_sdk import ClarOSClient
+
+client = ClarOSClient(
+    base_url="https://api.claros.ai",
+    client_id="sa_client_123",
+    client_secret="secret_xyz",
+)
+
+# Fetch or return cached M2M access token
+token = await client.get_token()
+print("M2M Token:", token)
+
+# Force re-fetching from auth service
+refreshed_token = await client.get_token(force_refresh=True)
+```
+
+---
+
+### 5. Outbound Communication Channels (`email`, `slack`, `discord`)
+
+Send messages and transactional notifications across multiple communication platforms:
 
 ```python
 client = ClarOSClient(
@@ -170,7 +193,7 @@ email_res = await client.email.send(
 
 # 2. Send Slack message (default webhook or channel)
 await client.slack.send(
-    channel="C0123456789",
+    channel="C0123456789" or "johndoe@example.com",
     title="Deployment Notice",
     message="Deployment completed successfully.",
 )
@@ -182,11 +205,18 @@ await support_bot.send(
     title="Support Ticket",
     message="Ticket #102 opened.",
 )
+
+# 4. Send Discord message
+await client.discord.send(
+    channel="123456789012345678",
+    title="Alert",
+    message="System alert triggered.",
+)
 ```
 
 ---
 
-### 5. Inbound Real-time Event Streaming (SSE)
+### 6. Inbound Real-time Event Streaming (SSE)
 
 Receive real-time inbound messages from Slack/Discord over SSE stream (`/api/v1/comm/inbound/stream`):
 
@@ -222,57 +252,81 @@ if __name__ == "__main__":
 
 ---
 
-### 6. Third-Party Connectors (`google`, `stripe`, `clickhouse`)
+### 7. Third-Party Connectors (`client.connectors`)
 
-Use `client.connectors` to dynamically resolve connection credentials from ClarOS and build official third-party SDK client instances automatically:
+Use `client.connectors` to dynamically resolve connection credentials from ClarOS and interact with third-party services and APIs:
+
+#### 7.1 Google Connector (`google`)
+
+Resolves credentials and builds an official `googleapiclient` Resource with OAuth2 Bearer token applied:
 
 ```python
-from claros_sdk import ClarOSClient
-
-client = ClarOSClient(
-    base_url="http://localhost:8080",
-    client_id="sa_client_123",
-    client_secret="secret_xyz",
-)
-
-# 1. Google Connector (requires 'google-api-python-client' and 'google-auth')
-# uv add "claros-sdk[google]"
+# Requires: uv add "claros-sdk[google]"
 sheets = await client.connectors.google("sheets")
-# Returns official googleapiclient Resource with OAuth2 Bearer token applied:
 result = sheets.spreadsheets().values().get(
     spreadsheetId="1BxiMVs0XRA5nFMdKvBdBZjgmUUqptlbs74OgvE2upms",
     range="Sheet1!A1:C10",
 ).execute()
 print("Google Sheets rows:", result.get("values", []))
 
-# Access other Google services
-drive = await client.connectors.google("my_drive_conn", service="drive")
+# Custom service and version
+drive = await client.connectors.google("my_drive_conn", service="drive", version="v3")
 results = drive.files().list().execute()
-files = results.get('files', [])
+for file in results.get("files", []):
+    print(f"Name: {file['name']} | ID: {file['id']}")
+```
 
-print('Here are your top 10 files:')
-for file in files:
-    print(f"Name: {file['name']} | ID: {file['id']} | Type: {file['mimeType']}")
+#### 7.2 Stripe Connector (`stripe`)
 
-# 2. Stripe Connector (requires 'stripe')
-# uv add "claros-sdk[stripe]"
+Resolves API key credentials and instantiates an official `stripe.StripeClient`:
+
+```python
+# Requires: uv add "claros-sdk[stripe]"
 stripe_client = await client.connectors.stripe("stripe")
-# Returns official stripe.StripeClient instance with ApiKey applied:
 customers = stripe_client.customers.list(limit=5)
 for customer in customers.data:
     print(customer.id, customer.email)
+```
 
-# 3. ClickHouse Connector (requires 'clickhouse-connect')
-# uv add "claros-sdk[clickhouse]"
+#### 7.3 ClickHouse Connector (`clickhouse`)
+
+Resolves credentials and instantiates an official `clickhouse_connect` client:
+
+```python
+# Requires: uv add "claros-sdk[clickhouse]"
 ch_client = await client.connectors.clickhouse("clickhouse")
-# Returns official clickhouse_connect client instance with credentials applied:
 query_res = ch_client.query("SELECT 1")
 print(query_res.result_rows)
 ```
 
+#### 7.4 HTTP / MCP Connector (`http`, `mcp`)
+
+Resolves credentials and applies authentication (`none`, `basic`, `bearer`, `api_key`) and custom headers for any HTTP/REST or MCP endpoint:
+
+```python
+# Uses built-in httpx (no extra dependencies required)
+http_conn = await client.connectors.http("partner-api")
+
+# GET (returns raw httpx.Response as-is)
+resp = await http_conn.get()
+print(resp.status_code, resp.json())
+
+# POST with body
+resp = await http_conn.post({"action": "sync", "data": [1, 2, 3]})
+print(resp.status_code, resp.json())
+
+# Direct one-shot convenience methods
+resp = await client.connectors.http_get("partner-api")
+resp = await client.connectors.http_post("partner-api", body={"action": "sync"})
+
+# MCP alias (identical behavior)
+mcp_conn = await client.connectors.mcp("mcp-server")
+mcp_resp = await mcp_conn.post({"jsonrpc": "2.0", "method": "tools/list", "id": 1})
+```
+
 ---
 
-### 7. AI Agent Sandbox Code Execution (`client.sandbox`)
+### 8. AI Agent Sandbox Code Execution (`client.sandbox`)
 
 Safely run isolated code blocks (Python, Bash, Shell) with automatic tenant context resolution, real-time output streaming, stateful sessions, and agent tool bindings:
 
@@ -405,9 +459,14 @@ Tenant headers (`X-Tenant-ID`, `X-Workspace-ID`, `X-User-ID`, `Authorization`) a
 #### Third-Party Connectors:
 
 - **`client.connectors` (`ConnectorsManager`)**:
+  - `http(key, force_refresh=False, httpx_client=None, **kwargs)` -> `HTTPConnector` with authentication applied.
+  - `http_get(key, path="", force_refresh=False, **kwargs)` -> Executes GET and returns raw `httpx.Response`.
+  - `http_post(key, body=None, path="", force_refresh=False, **kwargs)` -> Executes POST and returns raw `httpx.Response`.
+  - `mcp(key, ...)` / `mcp_get(...)` / `mcp_post(...)` -> Aliases for `http`, `http_get`, `http_post`.
   - `google(key, service=None, version=None, force_refresh=False, **kwargs)` -> Official `googleapiclient` Resource with credentials applied.
   - `stripe(key, force_refresh=False, **kwargs)` -> Official `stripe.StripeClient` with ApiKey applied.
-  - `get_token(key, force_refresh=False)` -> `ConnectorTokenData` (cached in-memory, auto-refreshed when expired).
+  - `clickhouse(key, force_refresh=False, **kwargs)` -> Official `clickhouse_connect` client with credentials applied.
+  - `resolve(key, force_refresh=False)` / `get_token(key, force_refresh=False)` -> `ConnectorTokenData` (cached in-memory, auto-refreshed when expired).
   - `clear_cache(key=None)` -> Clears in-memory token cache.
 
 #### User & Tenant Methods:

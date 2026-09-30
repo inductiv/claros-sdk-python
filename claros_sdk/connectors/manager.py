@@ -4,13 +4,15 @@ import asyncio
 import logging
 from typing import TYPE_CHECKING, Any, Literal, overload
 
+import httpx
+
 from claros_sdk.connectors.clickhouse import build_clickhouse_client
 from claros_sdk.connectors.google import DEFAULT_SERVICE_VERSIONS, build_google_client
+from claros_sdk.connectors.http import HTTPConnector, build_http_connector
 from claros_sdk.connectors.models import (
     CachedConnectorToken,
     ConnectorResolveResponse,
     ConnectorTokenData,
-    ConnectorTokenResponse,
 )
 from claros_sdk.connectors.stripe import build_stripe_client
 from claros_sdk.exceptions import ClarOSAPIError, ClarOSError
@@ -231,3 +233,52 @@ class ConnectorsManager:
         token_data = await self.resolve(key, force_refresh=force_refresh)
 
         return build_clickhouse_client(token_data=token_data, **kwargs)
+
+    async def http(
+        self,
+        key: str,
+        force_refresh: bool = False,
+        httpx_client: httpx.AsyncClient | None = None,
+        **kwargs: Any,
+    ) -> HTTPConnector:
+        """
+        Obtain HTTP connector with credentials and authentication applied.
+
+        Parameters:
+            key: Connection key configured in ClarOS (e.g. 'public-api', 'partner-api').
+            force_refresh: Whether to force re-fetching credentials from ClarOS.
+            httpx_client: Optional custom httpx.AsyncClient instance.
+        """
+        token_data = await self.resolve(key, force_refresh=force_refresh)
+        client = httpx_client or self._client._client
+        return build_http_connector(token_data=token_data, httpx_client=client, **kwargs)
+
+    mcp = http
+
+    async def http_get(
+        self,
+        key: str,
+        path: str = "",
+        force_refresh: bool = False,
+        **kwargs: Any,
+    ) -> httpx.Response:
+        """Execute a GET request on the HTTP connector for the specified connection key."""
+        conn = await self.http(key, force_refresh=force_refresh)
+        return await conn.get(path=path, **kwargs)
+
+    async def http_post(
+        self,
+        key: str,
+        body: Any = None,
+        path: str = "",
+        force_refresh: bool = False,
+        **kwargs: Any,
+    ) -> httpx.Response:
+        """Execute a POST request on the HTTP connector for the specified connection key."""
+        conn = await self.http(key, force_refresh=force_refresh)
+        return await conn.post(path=path, body=body, **kwargs)
+
+    mcp_get = http_get
+    mcp_post = http_post
+
+

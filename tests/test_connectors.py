@@ -539,3 +539,222 @@ async def test_clickhouse_client_build():
             )
             assert ch == mock_client
 
+
+@pytest.mark.asyncio
+async def test_http_connector_none_auth():
+    resolved = False
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        nonlocal resolved
+        if request.url.path == "/api/v1/platform/connectors/public-api/resolve":
+            resolved = True
+            return httpx.Response(
+                200,
+                json={
+                    "success": True,
+                    "payload": {
+                        "connection_key": "public-api",
+                        "provider": "http",
+                        "credentials": {
+                            "url": "https://api.example.com",
+                            "auth_type": "none",
+                            "headers": {"X-Custom-Header": "custom-value"},
+                        },
+                    },
+                },
+            )
+        if request.url.host == "api.example.com":
+            assert request.headers.get("X-Custom-Header") == "custom-value"
+            if request.method == "GET":
+                return httpx.Response(200, json={"items": [1, 2, 3]})
+            if request.method == "POST":
+                data = json.loads(request.content.decode())
+                return httpx.Response(201, json={"created": data})
+        return httpx.Response(404)
+
+    httpx_client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
+    async with ClarOSClient(base_url="http://localhost:8080", httpx_client=httpx_client) as client:
+        conn = await client.connectors.http("public-api")
+        assert resolved is True
+        assert conn.url == "https://api.example.com"
+        assert conn.auth_type == "none"
+
+        # GET request directly on connector url
+        res_get = await conn.get()
+        assert res_get.status_code == 200
+        assert res_get.json() == {"items": [1, 2, 3]}
+
+        # POST request directly with body
+        res_post = await conn.post({"name": "test-item"})
+        assert res_post.status_code == 201
+        assert res_post.json() == {"created": {"name": "test-item"}}
+
+
+@pytest.mark.asyncio
+async def test_http_connector_basic_auth():
+    import base64
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path == "/api/v1/platform/connectors/internal-service/resolve":
+            return httpx.Response(
+                200,
+                json={
+                    "success": True,
+                    "payload": {
+                        "connection_key": "internal-service",
+                        "provider": "http",
+                        "credentials": {
+                            "url": "https://service.internal.net",
+                            "auth_type": "basic",
+                            "username": "admin",
+                            "password": "secret-password",
+                            "headers": {},
+                        },
+                    },
+                },
+            )
+        if request.url.host == "service.internal.net":
+            expected_auth = "Basic " + base64.b64encode(b"admin:secret-password").decode()
+            assert request.headers.get("Authorization") == expected_auth
+            return httpx.Response(200, text="authenticated")
+        return httpx.Response(404)
+
+    httpx_client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
+    async with ClarOSClient(base_url="http://localhost:8080", httpx_client=httpx_client) as client:
+        conn = await client.connectors.http("internal-service")
+        resp = await conn.get()
+        assert resp.status_code == 200
+        assert resp.text == "authenticated"
+
+
+@pytest.mark.asyncio
+async def test_http_connector_bearer_auth():
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path == "/api/v1/platform/connectors/jwt-service/resolve":
+            return httpx.Response(
+                200,
+                json={
+                    "success": True,
+                    "payload": {
+                        "connection_key": "jwt-service",
+                        "provider": "http",
+                        "credentials": {
+                            "url": "https://api.example.com/v1",
+                            "auth_type": "bearer",
+                            "token": "eyJhbGciOi...",
+                            "headers": {},
+                        },
+                    },
+                },
+            )
+        if request.url.host == "api.example.com" and request.url.path == "/v1/data":
+            assert request.headers.get("Authorization") == "Bearer eyJhbGciOi..."
+            return httpx.Response(200, json={"auth": "ok"})
+        return httpx.Response(404)
+
+    httpx_client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
+    async with ClarOSClient(base_url="http://localhost:8080", httpx_client=httpx_client) as client:
+        conn = await client.connectors.http("jwt-service")
+        resp = await conn.get("data")
+        assert resp.status_code == 200
+        assert resp.json() == {"auth": "ok"}
+
+
+@pytest.mark.asyncio
+async def test_http_connector_api_key_auth():
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path == "/api/v1/platform/connectors/partner-api/resolve":
+            return httpx.Response(
+                200,
+                json={
+                    "success": True,
+                    "payload": {
+                        "connection_key": "partner-api",
+                        "provider": "http",
+                        "credentials": {
+                            "url": "https://api.partner.com",
+                            "auth_type": "api_key",
+                            "api_key": "key_live_123456789",
+                            "header_name": "X-Custom-API-Key",
+                            "headers": {},
+                        },
+                    },
+                },
+            )
+        if request.url.host == "api.partner.com":
+            assert request.headers.get("X-Custom-API-Key") == "key_live_123456789"
+            return httpx.Response(200, json={"partner": "ok"})
+        return httpx.Response(404)
+
+    httpx_client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
+    async with ClarOSClient(base_url="http://localhost:8080", httpx_client=httpx_client) as client:
+        conn = await client.connectors.http("partner-api")
+        resp = await conn.get()
+        assert resp.status_code == 200
+        assert resp.json() == {"partner": "ok"}
+
+
+@pytest.mark.asyncio
+async def test_http_connector_convenience_methods_and_mcp_alias():
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path == "/api/v1/platform/connectors/mcp-server/resolve":
+            return httpx.Response(
+                200,
+                json={
+                    "success": True,
+                    "payload": {
+                        "connection_key": "mcp-server",
+                        "provider": "mcp",
+                        "credentials": {
+                            "url": "https://mcp.internal.net",
+                            "auth_type": "none",
+                        },
+                    },
+                },
+            )
+        if request.url.host == "mcp.internal.net":
+            if request.method == "POST":
+                return httpx.Response(200, json={"received": json.loads(request.content)})
+            return httpx.Response(200, text="mcp ok")
+        return httpx.Response(404)
+
+    httpx_client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
+    async with ClarOSClient(base_url="http://localhost:8080", httpx_client=httpx_client) as client:
+        # Test mcp alias
+        conn = await client.connectors.mcp("mcp-server")
+        resp = await conn.get()
+        assert resp.status_code == 200
+        assert resp.text == "mcp ok"
+
+        # Test http_get & http_post
+        get_res = await client.connectors.http_get("mcp-server")
+        assert get_res.text == "mcp ok"
+
+        post_res = await client.connectors.http_post("mcp-server", body={"action": "run"})
+        assert post_res.json() == {"received": {"action": "run"}}
+
+
+
+
+@pytest.mark.asyncio
+async def test_http_connector_missing_url_raises():
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            200,
+            json={
+                "success": True,
+                "payload": {
+                    "connection_key": "bad-conn",
+                    "provider": "http",
+                    "credentials": {"auth_type": "none"},
+                },
+            },
+        )
+
+    httpx_client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
+    async with ClarOSClient(base_url="http://localhost:8080", httpx_client=httpx_client) as client:
+        with pytest.raises(ClarOSError) as exc_info:
+            await client.connectors.http("bad-conn")
+        assert "missing required 'url'" in str(exc_info.value)
+
+
