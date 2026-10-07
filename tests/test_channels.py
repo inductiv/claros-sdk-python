@@ -2,11 +2,19 @@ import json
 import httpx
 import pytest
 from claros_sdk import ClarOSClient
-from claros_sdk.channels import BaseChannel, DiscordBot, DiscordChannel, EmailChannel, SlackBot, SlackChannel
+from claros_sdk.channels import (
+    BaseChannel,
+    DiscordBot,
+    DiscordChannel,
+    EmailChannel,
+    NotificationChannel,
+    SlackBot,
+    SlackChannel,
+)
 
 
 def create_channels_mock_transport():
-    call_counts = {"token": 0, "slack": 0, "email": 0, "discord": 0}
+    call_counts = {"token": 0, "slack": 0, "email": 0, "discord": 0, "in-app": 0}
     last_requests = {}
 
     def handler(request: httpx.Request) -> httpx.Response:
@@ -27,6 +35,9 @@ def create_channels_mock_transport():
             return httpx.Response(200, json={"status": "sent", "id": "email-1"})
         elif path == "/api/v1/comm/discord":
             call_counts["discord"] += 1
+            return httpx.Response(200, json={"status": "delivered", "ok": True})
+        elif path == "/api/v1/comm/in-app":
+            call_counts["in-app"] += 1
             return httpx.Response(200, json={"status": "delivered", "ok": True})
 
         return httpx.Response(404, json={"error": "Not Found"})
@@ -166,5 +177,77 @@ async def test_discord_channel_send_and_scoped_bot():
     custom_ch = client.channel("whatsapp")
     assert isinstance(custom_ch, BaseChannel)
     assert custom_ch.channel_type == "whatsapp"
+
+    await client.close()
+
+
+@pytest.mark.asyncio
+async def test_notification_channel_send():
+    transport, call_counts, last_requests = create_channels_mock_transport()
+    httpx_client = httpx.AsyncClient(transport=transport)
+
+    client = ClarOSClient(
+        base_url="https://api.claros.ai",
+        client_id="sa_test_123",
+        client_secret="secret_test_456",
+        httpx_client=httpx_client,
+    )
+
+    assert isinstance(client.notification, NotificationChannel)
+    assert not hasattr(client, "in_app")
+    assert client.channel("in-app") is client.notification
+
+    # Test full payload via client.notification.send
+    res = await client.notification.send(
+        title="Deployment Alert",
+        message="Service core-platform is now healthy",
+        action_url="https://dashboard.claros.io/deployments/123",
+        severity="info",
+        metadata={
+            "cluster": "prod-us-east",
+            "version": "v1.4.0",
+        },
+    )
+    assert res["status"] == "delivered"
+    assert call_counts["in-app"] == 1
+
+    last_req = last_requests["/api/v1/comm/in-app"]
+    payload = json.loads(last_req.content)
+    assert payload == {
+        "title": "Deployment Alert",
+        "message": "Service core-platform is now healthy",
+        "action_url": "https://dashboard.claros.io/deployments/123",
+        "severity": "info",
+        "metadata": {
+            "cluster": "prod-us-east",
+            "version": "v1.4.0",
+        },
+    }
+
+    # Test minimal payload + arbitrary client kwargs
+    res2 = await client.notification.send(
+        title="Custom Notification",
+        message="Notice text",
+        custom_id=999,
+        nested={"foo": "bar"},
+    )
+    assert res2["status"] == "delivered"
+    payload2 = json.loads(last_requests["/api/v1/comm/in-app"].content)
+    assert payload2 == {
+        "title": "Custom Notification",
+        "message": "Notice text",
+        "custom_id": 999,
+        "nested": {"foo": "bar"},
+    }
+    assert "action_url" not in payload2
+    assert "severity" not in payload2
+    assert "metadata" not in payload2
+
+    # Validation: title and message required
+    with pytest.raises(ValueError, match="title is required"):
+        await client.notification.send(title="", message="hello")
+
+    with pytest.raises(ValueError, match="message is required"):
+        await client.notification.send(title="title", message="")
 
     await client.close()

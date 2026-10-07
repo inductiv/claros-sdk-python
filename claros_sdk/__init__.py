@@ -3,6 +3,7 @@ from claros_sdk.channels import (
     DiscordBot,
     DiscordChannel,
     EmailChannel,
+    NotificationChannel,
     SlackBot,
     SlackChannel,
 )
@@ -87,6 +88,7 @@ __all__ = [
     "InboundEventMessage",
     "InboundEventSource",
     "InboundMessageEvent",
+    "NotificationChannel",
     "SandboxManager",
     "SandboxSession",
     "SlackBot",

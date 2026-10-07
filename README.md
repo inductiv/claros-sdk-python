@@ -15,7 +15,7 @@ Python SDK for machine-to-machine (M2M) communication, user authentication, tena
 - **Single-Call Authentication (`authenticate`)**: Authenticates user tokens and resolves tenant context (`user_id`, `tenant_id`, `role`, `permissions`, `license_tier`) in a single unified API method.
 - **User & Tenant Resolution (`resolve_user_tenant`)**: Query and retrieve user profile and all associated tenants by email address (`GET /api/v1/platform/users/email`).
 - **Automatic OAuth2 M2M Authentication**: Obtains and caches access tokens using the `client_credentials` grant flow (`POST /api/v1/auth/oauth/token`). Supports both standard and wrapped JSON token payloads.
-- **Modular Communication Channels**: Send messages and notifications through channel-specific adapters (`client.slack.send()`, `client.email.send()`, `client.discord.send()`) with scoped bot routing (`client.slack.bot()`).
+- **Modular Communication Channels**: Send messages and notifications through channel-specific adapters (`client.slack.send()`, `client.email.send()`, `client.discord.send()`, `client.notification.send()`) with scoped bot routing (`client.slack.bot()`).
 - **Inbound Real-time Event Streaming (SSE)**: Maintain real-time inbound connection to `/api/v1/comm/inbound/stream` with auto-reconnection, event deduplication, and contextual auto-reply (`event.reply()`).
 - **Third-Party Connectors (`client.connectors`)**: Fetch credentials and instantiate official SDK clients (Google, Stripe, ClickHouse) or call custom HTTP/MCP endpoints with authentication applied and in-memory token caching.
 - **AI Agent Sandbox Code Execution (`client.sandbox`)**: Isolated code execution in Python, Bash, and Shell. Supports synchronous execution, asynchronous runs with real-time SSE streaming, stateful multi-step sessions, and standard AI agent tool schemas.
@@ -171,7 +171,7 @@ refreshed_token = await client.get_token(force_refresh=True)
 
 ---
 
-### 5. Outbound Communication Channels (`email`, `slack`, `discord`)
+### 5. Outbound Communication Channels (`email`, `slack`, `discord`, `in-app`)
 
 Send messages and transactional notifications across multiple communication platforms:
 
@@ -211,6 +211,16 @@ await client.discord.send(
     channel="123456789012345678",
     title="Alert",
     message="System alert triggered.",
+)
+
+# 5. Send In-App notification
+await client.notification.send(
+    title="Deployment Alert",
+    message="Service core-platform is now healthy",
+    # Anything else as per need, for example:
+    action_url="https://dashboard.claros.io/deployments/123",
+    severity="info",
+    metadata={"cluster": "prod-us-east", "version": "v1.4.0"},
 )
 ```
 
@@ -494,6 +504,9 @@ Tenant headers (`X-Tenant-ID`, `X-Workspace-ID`, `X-User-ID`, `Authorization`) a
   - `send(message="", channel=None, title=None, config_key=None, **kwargs)` -> `dict`
   - `bot(config_key)` -> `DiscordBot` (scoped bot client)
   - `on_message(handler)` -> Registers a listener for all inbound Discord events
+- **`client.notification` (`NotificationChannel`)**:
+  - `send(title, message, action_url=None, severity=None, metadata=None, **kwargs)` -> `dict`
+  - `on_message(handler)` -> Registers a listener for all inbound In-App events
 - **`client.channel(channel_type)` (`BaseChannel`)**:
   - Dynamically get or instantiate any communication channel adapter.
 

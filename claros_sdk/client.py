@@ -13,6 +13,7 @@ import httpx
 from claros_sdk.channels.base import BaseChannel
 from claros_sdk.channels.discord import DiscordChannel
 from claros_sdk.channels.email import EmailChannel
+from claros_sdk.channels.notification import NotificationChannel
 from claros_sdk.channels.slack import SlackChannel
 from claros_sdk.connectors.manager import ConnectorsManager
 from claros_sdk.events import EventEmitter
@@ -74,6 +75,7 @@ class ClarOSClient:
         self.slack = SlackChannel(self)
         self.email = EmailChannel(self)
         self.discord = DiscordChannel(self)
+        self.notification = NotificationChannel(self)
 
         # Third-party Integrations & Connectors
         self.connectors = ConnectorsManager(self)
@@ -106,6 +108,8 @@ class ClarOSClient:
             return self.email
         elif channel_type == "discord":
             return self.discord
+        elif channel_type == "in-app":
+            return self.notification
         return BaseChannel(self, channel_type=channel_type)
 
     @property
