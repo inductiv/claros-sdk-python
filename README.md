@@ -213,16 +213,32 @@ await client.discord.send(
     message="System alert triggered.",
 )
 
-# 5. Send In-App notification
+```
+
+#### 5.1 In-App Notification, Targeting & Delivery Rules
+
+```py
 await client.notification.send(
-    title="Deployment Alert",
-    message="Service core-platform is now healthy",
-    # Anything else as per need, for example:
+    title="Deployment Alert", # required
+    message="Service core-platform is now healthy", # required
+    user_ids=["usr_123"], # optional
+    roles=["admin"], # optional
+    initiator_id="usr_actor", # optional
+
+    # Anything else customized data can be sent. For example:
     action_url="https://dashboard.claros.io/deployments/123",
     severity="info",
     metadata={"cluster": "prod-us-east", "version": "v1.4.0"},
 )
 ```
+
+In-app notifications (`client.notification.send`) support recipient targeting via `user_ids` and `roles`, along with sender suppression via `initiator_id`. The backend evaluates delivery using the following rules:
+
+1. **Tenant Broadcast**: If only `tenant_id` is provided (no `user_ids` or `roles`), all members of the tenant receive the notification, except the user identified by `initiator_id` (if specified).
+2. **Role Targeting**: If `roles` are provided (e.g. `["admin"]`), only tenant members holding any of those roles receive the notification, excluding `initiator_id`.
+3. **User Targeting**: If `user_ids` are provided (e.g. `["user-1", "user-2"]`), only those specified users receive the notification, excluding `initiator_id`.
+4. **Union Targeting & Deduplication**: If both `roles` (`["admin"]`) and `user_ids` (`["user-1", "user-2"]`) are specified, delivery targets the union of both sets (all admins plus `user-2`). If `user-1` is already an admin, they are automatically deduplicated so they receive the notification only once, while `initiator_id` is excluded.
+5. **Initiator Suppression**: If `initiator_id` matches an otherwise eligible recipient, that user is excluded from delivery so users do not receive their own actions.
 
 ---
 

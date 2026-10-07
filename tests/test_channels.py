@@ -243,6 +243,24 @@ async def test_notification_channel_send():
     assert "severity" not in payload2
     assert "metadata" not in payload2
 
+    # Test targeted payload (user_ids, roles, initiator_id)
+    res3 = await client.notification.send(
+        title="Targeted Alert",
+        message="Notice for admins",
+        user_ids=["usr_1", "usr_2"],
+        roles=["ADMIN", "MEMBER"],
+        initiator_id="usr_actor",
+    )
+    assert res3["status"] == "delivered"
+    payload3 = json.loads(last_requests["/api/v1/comm/in-app"].content)
+    assert payload3 == {
+        "title": "Targeted Alert",
+        "message": "Notice for admins",
+        "user_ids": ["usr_1", "usr_2"],
+        "roles": ["ADMIN", "MEMBER"],
+        "initiator_id": "usr_actor",
+    }
+
     # Validation: title and message required
     with pytest.raises(ValueError, match="title is required"):
         await client.notification.send(title="", message="hello")

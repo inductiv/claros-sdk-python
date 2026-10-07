@@ -20,6 +20,9 @@ class NotificationChannel(BaseChannel):
         self,
         title: str,
         message: str,
+        user_ids: list[str] | None = None,
+        roles: list[str] | None = None,
+        initiator_id: str | None = None,
         **kwargs: Any,
     ) -> dict[str, Any]:
         """
@@ -28,6 +31,9 @@ class NotificationChannel(BaseChannel):
         Args:
             title: Title of the notification (required)
             message: Message body (required)
+            user_ids: Optional list of target user IDs
+            roles: Optional list of target roles
+            initiator_id: Optional ID of the user initiating the notification
             action_url: Optional URL action link
             severity: Optional severity level (e.g. 'info', 'warning', 'error')
             metadata: Optional dictionary with custom metadata
@@ -42,6 +48,12 @@ class NotificationChannel(BaseChannel):
             "title": title,
             "message": message,
         }
+        if user_ids is not None:
+            payload["user_ids"] = user_ids
+        if roles is not None:
+            payload["roles"] = roles
+        if initiator_id is not None:
+            payload["initiator_id"] = initiator_id
         payload.update(kwargs)
 
         return await self._client.post(f"/api/v1/comm/{self.channel_type}", json=payload)
