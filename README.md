@@ -17,7 +17,7 @@ Python SDK for machine-to-machine (M2M) communication, user authentication, tena
 - **Automatic OAuth2 M2M Authentication**: Obtains and caches access tokens using the `client_credentials` grant flow (`POST /api/v1/auth/oauth/token`). Supports both standard and wrapped JSON token payloads.
 - **Modular Communication Channels**: Send messages and notifications through channel-specific adapters (`client.slack.send()`, `client.email.send()`, `client.discord.send()`, `client.notification.send()`) with scoped bot routing (`client.slack.bot()`).
 - **Inbound Real-time Event Streaming (SSE)**: Maintain real-time inbound connection to `/api/v1/comm/inbound/stream` with auto-reconnection, event deduplication, and contextual auto-reply (`event.reply()`).
-- **Third-Party Connectors (`client.connectors`)**: Fetch credentials and instantiate official SDK clients (Google, Stripe, ClickHouse) or call custom HTTP/MCP endpoints with authentication applied and in-memory token caching.
+- **Third-Party Connectors (`client.connectors`)**: Fetch credentials and instantiate official SDK clients (Google, Stripe, ClickHouse, Xero) or call custom HTTP/MCP endpoints with authentication applied and in-memory token caching.
 - **AI Agent Sandbox Code Execution (`client.sandbox`)**: Isolated code execution in Python, Bash, and Shell. Supports synchronous execution, asynchronous runs with real-time SSE streaming, stateful multi-step sessions, and standard AI agent tool schemas.
 - **Async API**: Built on `httpx.AsyncClient` for high-performance non-blocking I/O.
 
@@ -31,13 +31,14 @@ Python SDK for machine-to-machine (M2M) communication, user authentication, tena
 # Specific release tag (recommended)
 uv add "git+https://github.com/inductiv/claros-sdk-python.git@vX.Y.Z"
 
-# With all connectors (Google, Stripe, etc.)
+# With all connectors (Google, Stripe, ClickHouse, Xero, etc.)
 uv add "claros-sdk[all] @ git+https://github.com/inductiv/claros-sdk-python.git@vX.Y.Z"
 
 # Individual connector extras:
 # uv add "claros-sdk[google] @ git+https://github.com/inductiv/claros-sdk-python.git@vX.Y.Z"
 # uv add "claros-sdk[stripe] @ git+https://github.com/inductiv/claros-sdk-python.git@vX.Y.Z"
 # uv add "claros-sdk[clickhouse] @ git+https://github.com/inductiv/claros-sdk-python.git@vX.Y.Z"
+# uv add "claros-sdk[xero] @ git+https://github.com/inductiv/claros-sdk-python.git@vX.Y.Z"
 
 # Private repo via SSH
 uv add "git+ssh://git@github.com/inductiv/claros-sdk-python.git@vX.Y.Z"
@@ -325,7 +326,30 @@ query_res = ch_client.query("SELECT 1")
 print(query_res.result_rows)
 ```
 
-#### 7.4 HTTP / MCP Connector (`http`, `mcp`)
+#### 7.4 Xero Connector (`xero`)
+
+Resolves OAuth2 credentials and instantiates an official `xero-python` `ApiClient` using the stored user access token (no client ID or secret required for pre-authenticated tokens):
+
+```python
+# Requires: uv add "claros-sdk[xero]"
+from xero_python.accounting import AccountingApi
+from xero_python.identity import IdentityApi
+
+# Builds ApiClient with user's access token applied
+xero_client = await client.connectors.xero("xero")
+
+# Retrieve authorized tenant connections
+identity_api = IdentityApi(xero_client)
+connections = identity_api.get_connections()
+tenant_id = connections[0].tenant_id
+
+# Call Accounting API
+accounting_api = AccountingApi(xero_client)
+invoices = accounting_api.get_invoices(xero_tenant_id=tenant_id)
+print("Invoices:", invoices)
+```
+
+#### 7.5 HTTP / MCP Connector (`http`, `mcp`)
 
 Resolves credentials and applies authentication (`none`, `basic`, `bearer`, `api_key`) and custom headers for any HTTP/REST or MCP endpoint:
 
@@ -492,6 +516,7 @@ Tenant headers (`X-Tenant-ID`, `X-Workspace-ID`, `X-User-ID`, `Authorization`) a
   - `google(key, service=None, version=None, force_refresh=False, **kwargs)` -> Official `googleapiclient` Resource with credentials applied.
   - `stripe(key, force_refresh=False, **kwargs)` -> Official `stripe.StripeClient` with ApiKey applied.
   - `clickhouse(key, force_refresh=False, **kwargs)` -> Official `clickhouse_connect` client with credentials applied.
+  - `xero(key, force_refresh=False, **kwargs)` -> Official `xero-python` `ApiClient` with credentials applied.
   - `resolve(key, force_refresh=False)` / `get_token(key, force_refresh=False)` -> `ConnectorTokenData` (cached in-memory, auto-refreshed when expired).
   - `clear_cache(key=None)` -> Clears in-memory token cache.
 

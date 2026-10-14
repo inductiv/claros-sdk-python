@@ -758,3 +758,95 @@ async def test_http_connector_missing_url_raises():
         assert "missing required 'url'" in str(exc_info.value)
 
 
+@pytest.mark.asyncio
+async def test_xero_missing_dependency_raises_helpful_error():
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            200,
+            json={
+                "code": 200,
+                "message": "OK",
+                "data": {
+                    "token": "xero_mock_token",
+                    "token_type": "Bearer",
+                    "provider": "xero",
+                    "connection_key": "xero",
+                },
+            },
+        )
+
+    httpx_client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
+    async with ClarOSClient(base_url="http://localhost:8080", httpx_client=httpx_client) as client:
+        with patch.dict("sys.modules", {"xero_python": None}):
+            with pytest.raises(ClarOSError) as exc_info:
+                await client.connectors.xero("xero")
+            assert "pip install 'claros-sdk[xero]'" in str(exc_info.value)
+
+
+@pytest.mark.asyncio
+async def test_xero_client_build_with_access_token():
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            200,
+            json={
+                "code": 200,
+                "message": "OK",
+                "data": {
+                    "token": "xero_mock_access_token_123",
+                    "token_type": "Bearer",
+                    "provider": "xero",
+                    "connection_key": "xero",
+                    "tenant_id": "tenant-uuid-456",
+                },
+            },
+        )
+
+    httpx_client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
+    async with ClarOSClient(base_url="http://localhost:8080", httpx_client=httpx_client) as client:
+        xero_client = await client.connectors.xero("xero")
+
+        assert xero_client is not None
+        assert xero_client.default_headers.get("xero-tenant-id") == "tenant-uuid-456"
+
+        # Verify auth headers resolution using OAuth2
+        headers: dict[str, str] = {}
+        querys: list[tuple[str, str]] = []
+        xero_client.update_params_for_auth(headers, querys, ["oauth2"])
+        assert headers.get("Authorization") == "Bearer xero_mock_access_token_123"
+
+
+@pytest.mark.asyncio
+async def test_xero_client_with_tenant_override_and_kwargs():
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            200,
+            json={
+                "code": 200,
+                "message": "OK",
+                "data": {
+                    "token": "xero_token_abc",
+                    "token_type": "Bearer",
+                    "provider": "xero",
+                    "connection_key": "xero_custom",
+                },
+            },
+        )
+
+    httpx_client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
+    async with ClarOSClient(base_url="http://localhost:8080", httpx_client=httpx_client) as client:
+        xero_client = await client.connectors.xero(
+            "xero_custom",
+            tenant_id="custom-tenant-999",
+            debug=True,
+            pool_threads=2,
+        )
+
+        assert xero_client.configuration.debug is True
+        assert xero_client.default_headers.get("xero-tenant-id") == "custom-tenant-999"
+
+        headers: dict[str, str] = {}
+        querys: list[tuple[str, str]] = []
+        xero_client.update_params_for_auth(headers, querys, ["oauth2"])
+        assert headers.get("Authorization") == "Bearer xero_token_abc"
+
+

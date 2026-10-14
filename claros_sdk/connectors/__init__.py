@@ -12,6 +12,7 @@ from claros_sdk.connectors.models import (
     ConnectorTokenResponse,
 )
 from claros_sdk.connectors.stripe import build_stripe_client
+from claros_sdk.connectors.xero import build_xero_client
 
 __all__ = [
     "CachedConnectorToken",
@@ -25,4 +26,5 @@ __all__ = [
     "build_google_client",
     "build_http_connector",
     "build_stripe_client",
+    "build_xero_client",
 ]

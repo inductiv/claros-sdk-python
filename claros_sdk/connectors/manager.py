@@ -15,12 +15,14 @@ from claros_sdk.connectors.models import (
     ConnectorTokenData,
 )
 from claros_sdk.connectors.stripe import build_stripe_client
+from claros_sdk.connectors.xero import build_xero_client
 from claros_sdk.exceptions import ClarOSAPIError, ClarOSError
 
 if TYPE_CHECKING:
     import stripe
     from clickhouse_connect.driver.client import Client as ClickHouseClient
     from googleapiclient.discovery import Resource
+    from xero_python.api_client import ApiClient as XeroApiClient
 
     import googleapiclient._apis.calendar.v3
     import googleapiclient._apis.drive.v3
@@ -233,6 +235,24 @@ class ConnectorsManager:
         token_data = await self.resolve(key, force_refresh=force_refresh)
 
         return build_clickhouse_client(token_data=token_data, **kwargs)
+
+    async def xero(
+        self,
+        key: str,
+        force_refresh: bool = False,
+        **kwargs: Any,
+    ) -> XeroApiClient:
+        """
+        Obtain official Xero ApiClient with credentials for connection key.
+
+        Parameters:
+            key: Connection key configured in ClarOS (e.g. 'xero').
+            force_refresh: Whether to force re-fetching the token from ClarOS.
+            **kwargs: Extra arguments passed to build_xero_client().
+        """
+        token_data = await self.resolve(key, force_refresh=force_refresh)
+
+        return build_xero_client(token_data=token_data, **kwargs)
 
     async def http(
         self,
