@@ -92,8 +92,9 @@ def build_xero_client(
     getter = kwargs.pop("oauth2_token_getter", lambda: token_dict)
     saver = kwargs.pop("oauth2_token_saver", _default_saver)
 
+    explicit_tenant_id = kwargs.pop("tenant_id", None)
     tenant_id = (
-        kwargs.pop("tenant_id", None)
+        explicit_tenant_id
         or token_data.tenant_id
         or creds.get("tenant_id")
         or creds.get("xero_tenant_id")
@@ -107,6 +108,12 @@ def build_xero_client(
     )
 
     if tenant_id:
-        client.set_default_header("xero-tenant-id", tenant_id)
+        client.tenant_id = tenant_id
+
+    # Only set default header if the caller explicitly passed a tenant_id argument.
+    # In xero-python, ApiClient.__call_api overwrites method parameters with default_headers,
+    # which breaks multi-tenant workflows and dynamic xero_tenant_id arguments when set automatically.
+    if explicit_tenant_id:
+        client.set_default_header("xero-tenant-id", explicit_tenant_id)
 
     return client

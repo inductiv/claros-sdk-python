@@ -806,7 +806,8 @@ async def test_xero_client_build_with_access_token():
         xero_client = await client.connectors.xero("xero")
 
         assert xero_client is not None
-        assert xero_client.default_headers.get("xero-tenant-id") == "tenant-uuid-456"
+        assert xero_client.tenant_id == "tenant-uuid-456"
+        assert "xero-tenant-id" not in xero_client.default_headers
 
         # Verify auth headers resolution using OAuth2
         headers: dict[str, str] = {}
@@ -842,6 +843,7 @@ async def test_xero_client_with_tenant_override_and_kwargs():
         )
 
         assert xero_client.configuration.debug is True
+        assert xero_client.tenant_id == "custom-tenant-999"
         assert xero_client.default_headers.get("xero-tenant-id") == "custom-tenant-999"
 
         headers: dict[str, str] = {}
