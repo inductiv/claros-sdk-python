@@ -26,6 +26,7 @@ from claros_sdk.models import (
     UserTenantResponse,
 )
 from claros_sdk.sandbox.manager import SandboxManager
+from claros_sdk.storage.manager import StorageManager
 
 logger = logging.getLogger(__name__)
 
@@ -82,6 +83,9 @@ class ClarOSClient:
 
         # AI Agent Sandbox Execution Wrapper
         self.sandbox = SandboxManager(self)
+
+        # Multi-tenant File Storage Wrapper
+        self.storage = StorageManager(self)
 
     def _get_lock(self) -> asyncio.Lock:
         if self._connection_lock is None:

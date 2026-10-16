@@ -19,6 +19,7 @@ Python SDK for machine-to-machine (M2M) communication, user authentication, tena
 - **Inbound Real-time Event Streaming (SSE)**: Maintain real-time inbound connection to `/api/v1/comm/inbound/stream` with auto-reconnection, event deduplication, and contextual auto-reply (`event.reply()`).
 - **Third-Party Connectors (`client.connectors`)**: Fetch credentials and instantiate official SDK clients (Google, Stripe, ClickHouse, Xero) or call custom HTTP/MCP endpoints with authentication applied and in-memory token caching.
 - **AI Agent Sandbox Code Execution (`client.sandbox`)**: Isolated code execution in Python, Bash, and Shell. Supports synchronous execution, asynchronous runs with real-time SSE streaming, stateful multi-step sessions, and standard AI agent tool schemas.
+- **Multi-Tenant File Storage (`client.storage`)**: Upload, list, inspect metadata, generate pre-signed URLs, download, stream (with HTTP `Range` support), and delete tenant files backed by SeaweedFS.
 - **Async API**: Built on `httpx.AsyncClient` for high-performance non-blocking I/O.
 
 ---
@@ -493,6 +494,52 @@ Tenant headers (`X-Tenant-ID`, `X-Workspace-ID`, `X-User-ID`, `Authorization`) a
 
 ---
 
+### 9. Multi-Tenant File Storage (`client.storage`)
+
+Upload, list, inspect, download, stream, and delete tenant files via `/api/v1/platform/storage`:
+
+```python
+from pathlib import Path
+from claros_sdk import ClarOSClient
+
+async with ClarOSClient(
+    base_url="https://api.claros.ai",
+    client_id="sa_client_123",
+    client_secret="secret_xyz",
+) as client:
+    # 1. Upload file (accepts bytes, str/Path, or binary file-like object)
+    asset = await client.storage.upload(
+        Path("report.csv"),
+        category="data",
+    )
+    print(f"Uploaded {asset.file_name} (ID: {asset.id}, Size: {asset.file_size_bytes}B)")
+
+    # 2. List tenant files (paginated)
+    listing = await client.storage.list_files(page=1, limit=20, category="data")
+    for item in listing.items:
+        print(f"- {item.id}: {item.file_name} ({item.content_type})")
+
+    # 3. Get file metadata
+    meta = await client.storage.get_metadata(asset.id)
+    print(f"Checksum: {meta.checksum}")
+
+    # 4. Generate pre-signed download URL
+    presigned = await client.storage.get_presigned_url(asset.id)
+    print(f"Download URL (expires in {presigned.expires_in}s): {presigned.download_url}")
+
+    # 5. Download file bytes directly (for files <= direct streaming limit)
+    content = await client.storage.download(asset.id)
+
+    # 6. Stream file chunks (supports optional HTTP Range header)
+    async for chunk in client.storage.stream(asset.id, range_header="bytes=0-1023"):
+        process_chunk(chunk)
+
+    # 7. Delete file
+    await client.storage.delete(asset.id)
+```
+
+---
+
 ## API Reference
 
 ### Client Class
@@ -563,6 +610,17 @@ Tenant headers (`X-Tenant-ID`, `X-Workspace-ID`, `X-User-ID`, `Authorization`) a
   - `terminate_session(session_id)` -> `bool` (purge stateful session container resources).
   - `get_tools()` -> `list[AgentTool]` (return AI agent tools with JSON Schemas and execution handlers).
 
+#### Multi-Tenant File Storage:
+
+- **`client.storage` (`StorageManager`)**:
+  - `upload(file, file_name=None, category="general", content_type=None, ...)` -> `StorageAsset` (`POST /api/v1/platform/storage/upload`).
+  - `list_files(page=1, limit=20, category=None, ...)` -> `StorageAssetListResponse` (`GET /api/v1/platform/storage/files`).
+  - `get_metadata(file_id, ...)` -> `StorageAsset` (`GET /api/v1/platform/storage/files/{id}/metadata`).
+  - `get_presigned_url(file_id, ...)` -> `PresignedURLResponse` (`GET /api/v1/platform/storage/files/{id}?presign=true`).
+  - `download(file_id, ...)` -> `bytes` (`GET /api/v1/platform/storage/files/{id}`).
+  - `stream(file_id, range_header=None, chunk_size=65536, ...)` -> `AsyncIterator[bytes]` (`GET /api/v1/platform/storage/files/{id}/stream`).
+  - `delete(file_id, ...)` -> `bool` (`DELETE /api/v1/platform/storage/files/{id}`).
+
 #### Inbound SSE Streaming:
 
 - **`listen()`**: Connects and continuously streams inbound SSE events.
@@ -594,6 +652,12 @@ Tenant headers (`X-Tenant-ID`, `X-Workspace-ID`, `X-User-ID`, `Authorization`) a
   - `event`: `str`, `data`: `str`, `id`: `str | None`, `stream`: `Literal["stdout", "stderr", "system"] | None`
 - **`AgentTool`**:
   - `name`: `str`, `description`: `str`, `parameters`: `dict[str, Any]`, `handler`: callable, `to_openai_tool()`: convert to OpenAI schema format
+- **`StorageAsset`**:
+  - `id`: `str`, `tenant_id`: `str`, `user_id`: `str | None`, `category`: `str`, `file_name`: `str`, `content_type`: `str`, `file_size_bytes`: `int`, `bucket_name`: `str`, `file_key`: `str`, `checksum`: `str | None`, `created_at`: `datetime | str | None`, `updated_at`: `datetime | str | None`
+- **`PresignedURLResponse`**:
+  - `id`: `str`, `download_url`: `str`, `expires_at`: `datetime | str | None`, `expires_in`: `int`
+- **`StorageAssetListResponse`**:
+  - `items`: `list[StorageAsset]`, `meta`: `StoragePaginationMeta` (`total`, `has_next`, `page`, `limit`)
 - **`UserTenantResponse`**:
   - `success`: `bool`
   - `message`: `str`
