@@ -807,13 +807,49 @@ async def test_xero_client_build_with_access_token():
 
         assert xero_client is not None
         assert xero_client.tenant_id == "tenant-uuid-456"
-        assert "xero-tenant-id" not in xero_client.default_headers
+        assert xero_client.xero_tenant_id == "tenant-uuid-456"
+        assert xero_client.default_headers.get("xero-tenant-id") == "tenant-uuid-456"
 
         # Verify auth headers resolution using OAuth2
         headers: dict[str, str] = {}
         querys: list[tuple[str, str]] = []
         xero_client.update_params_for_auth(headers, querys, ["oauth2"])
         assert headers.get("Authorization") == "Bearer xero_mock_access_token_123"
+
+
+@pytest.mark.asyncio
+async def test_xero_client_build_with_connected_organization():
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            200,
+            json={
+                "code": 200,
+                "message": "OK",
+                "data": {
+                    "token": "xero_mock_token_abc",
+                    "token_type": "Bearer",
+                    "provider": "xero",
+                    "connection_key": "xero",
+                    "tenant_id": "claros-internal-tenant-id",
+                    "connected_organization": {
+                        "id": "xero-org-id-789",
+                        "name": "Maple Florist",
+                        "connection_id": "conn-xero-123",
+                    },
+                },
+            },
+        )
+
+    httpx_client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
+    async with ClarOSClient(base_url="http://localhost:8080", httpx_client=httpx_client) as client:
+        xero_client = await client.connectors.xero("xero")
+
+        assert xero_client is not None
+        # Must hard-embed the connected organization's Xero tenant ID, NOT ClarOS internal tenant UUID
+        assert xero_client.tenant_id == "xero-org-id-789"
+        assert xero_client.xero_tenant_id == "xero-org-id-789"
+        assert xero_client.default_headers.get("xero-tenant-id") == "xero-org-id-789"
+        assert xero_client.connected_organization["name"] == "Maple Florist"
 
 
 @pytest.mark.asyncio

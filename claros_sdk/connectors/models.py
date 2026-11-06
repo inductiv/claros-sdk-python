@@ -20,6 +20,8 @@ class ConnectorTokenData(BaseModel):
     status: str | None = None
     tenant_id: str | None = None
     metadata: Any = None
+    connected_organization: Any = None
+    organization: Any = None
     expires_at: datetime | str | None = None
     expires_in: int | float | None = None
 
@@ -27,6 +29,17 @@ class ConnectorTokenData(BaseModel):
     token_type: str | None = None
 
     def model_post_init(self, __context: Any) -> None:
+        if not self.connected_organization and isinstance(self.metadata, dict):
+            object.__setattr__(
+                self,
+                "connected_organization",
+                self.metadata.get("connected_organization") or self.metadata.get("organization"),
+            )
+        if not self.organization and self.connected_organization:
+            object.__setattr__(self, "organization", self.connected_organization)
+        elif not self.connected_organization and self.organization:
+            object.__setattr__(self, "connected_organization", self.organization)
+
         if not self.token:
             if "access_token" in self.credentials:
                 object.__setattr__(self, "token", self.credentials["access_token"])

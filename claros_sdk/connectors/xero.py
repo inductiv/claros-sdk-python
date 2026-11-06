@@ -92,13 +92,30 @@ def build_xero_client(
     getter = kwargs.pop("oauth2_token_getter", lambda: token_dict)
     saver = kwargs.pop("oauth2_token_saver", _default_saver)
 
-    explicit_tenant_id = kwargs.pop("tenant_id", None)
-    tenant_id = (
-        explicit_tenant_id
-        or token_data.tenant_id
-        or creds.get("tenant_id")
-        or creds.get("xero_tenant_id")
-    )
+    explicit_tenant_id = kwargs.pop("xero_tenant_id", None) or kwargs.pop("tenant_id", None)
+    xero_tenant_id = explicit_tenant_id
+
+    conn_org = token_data.connected_organization or token_data.organization
+    if not xero_tenant_id and isinstance(conn_org, dict):
+        xero_tenant_id = conn_org.get("id") or conn_org.get("tenant_id")
+
+    if not xero_tenant_id and isinstance(token_data.metadata, dict):
+        meta = token_data.metadata
+        xero_tenant_id = (
+            meta.get("xero_tenant_id")
+            or meta.get("organization_id")
+            or meta.get("tenant_id")
+        )
+        if not xero_tenant_id and isinstance(meta.get("organization"), dict):
+            xero_tenant_id = meta["organization"].get("id") or meta["organization"].get("tenant_id")
+        if not xero_tenant_id and isinstance(meta.get("connected_organization"), dict):
+            xero_tenant_id = meta["connected_organization"].get("id") or meta["connected_organization"].get("tenant_id")
+
+    if not xero_tenant_id:
+        xero_tenant_id = creds.get("xero_tenant_id") or creds.get("organization_id") or creds.get("tenant_id")
+
+    if not xero_tenant_id:
+        xero_tenant_id = token_data.tenant_id
 
     client = ApiClient(
         configuration=config,
@@ -107,13 +124,13 @@ def build_xero_client(
         **kwargs,
     )
 
-    if tenant_id:
-        client.tenant_id = tenant_id
+    if xero_tenant_id:
+        client.tenant_id = xero_tenant_id
+        client.xero_tenant_id = xero_tenant_id
+        # Hard embed the xero-tenant-id header so caller does not need to choose connections
+        client.set_default_header("xero-tenant-id", xero_tenant_id)
 
-    # Only set default header if the caller explicitly passed a tenant_id argument.
-    # In xero-python, ApiClient.__call_api overwrites method parameters with default_headers,
-    # which breaks multi-tenant workflows and dynamic xero_tenant_id arguments when set automatically.
-    if explicit_tenant_id:
-        client.set_default_header("xero-tenant-id", explicit_tenant_id)
+    if conn_org:
+        client.connected_organization = conn_org
 
     return client

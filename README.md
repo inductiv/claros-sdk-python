@@ -329,24 +329,22 @@ print(query_res.result_rows)
 
 #### 7.4 Xero Connector (`xero`)
 
-Resolves OAuth2 credentials and instantiates an official `xero-python` `ApiClient` using the stored user access token (no client ID or secret required for pre-authenticated tokens):
+Resolves OAuth2 credentials and instantiates an official `xero-python` `ApiClient` using the stored user access token with the tenant's connected organization automatically embedded (no client ID, secret, or manual connection selection required):
 
 ```python
 # Requires: uv add "claros-sdk[xero]"
 from xero_python.accounting import AccountingApi
-from xero_python.identity import IdentityApi
 
-# Builds ApiClient with user's access token applied
+# Builds ApiClient with access token and connected organization xero-tenant-id hard-embedded
 xero_client = await client.connectors.xero("xero")
 
-# Retrieve authorized tenant connections
-identity_api = IdentityApi(xero_client)
-connections = identity_api.get_connections()
-tenant_id = connections[0].tenant_id
+# Access connected organization details directly
+print("Connected Org:", xero_client.connected_organization)
+print("Xero Tenant ID:", xero_client.tenant_id)
 
-# Call Accounting API
+# Call Accounting API directly without manual connection selection:
 accounting_api = AccountingApi(xero_client)
-invoices = accounting_api.get_invoices(xero_tenant_id=tenant_id)
+invoices = accounting_api.get_invoices(xero_client.tenant_id)
 print("Invoices:", invoices)
 ```
 
@@ -563,8 +561,8 @@ async with ClarOSClient(
   - `google(key, service=None, version=None, force_refresh=False, **kwargs)` -> Official `googleapiclient` Resource with credentials applied.
   - `stripe(key, force_refresh=False, **kwargs)` -> Official `stripe.StripeClient` with ApiKey applied.
   - `clickhouse(key, force_refresh=False, **kwargs)` -> Official `clickhouse_connect` client with credentials applied.
-  - `xero(key, force_refresh=False, **kwargs)` -> Official `xero-python` `ApiClient` with credentials applied.
-  - `resolve(key, force_refresh=False)` / `get_token(key, force_refresh=False)` -> `ConnectorTokenData` (cached in-memory, auto-refreshed when expired).
+  - `xero(key, force_refresh=False, **kwargs)` -> Official `xero-python` `ApiClient` with credentials and connected organization `xero-tenant-id` hard-embedded.
+  - `resolve(key, force_refresh=False)` / `get_token(key, force_refresh=False)` -> `ConnectorTokenData` (includes `connected_organization`, `credentials`, cached in-memory, auto-refreshed when expired).
   - `clear_cache(key=None)` -> Clears in-memory token cache.
 
 #### User & Tenant Methods:
